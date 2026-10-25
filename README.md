@@ -149,6 +149,33 @@ closes 10 seconds after the drone stops. Several drones share port 1935.
   accepted from the network but only readable on this computer.
 - Without MediaMTX, Connect Drone falls back to arming one listener per connection.
 
+### Drone location on the map
+
+Video streams (RTMP/RTSP) carry no GPS, so each drone's position is gathered
+separately and the most accurate source wins
+([api/services/drone_locations.py](api/services/drone_locations.py)). Drones show
+on the Damage Map with an accuracy circle; each Live Monitoring panel says where
+its drone's position comes from. A drone is identified by its stream name
+(`rtmp://…/live/rescue-one` is drone `rescue-one`).
+
+1. **Drone GPS (1–5 m):** anything that can read the aircraft's GPS posts it,
+   about once a second, with the same drone id:
+   ```bash
+   curl -X POST http://<api>:8000/drone/telemetry -H "X-Device-Key: <DRONE_INGEST_KEY>"      -H "Content-Type: application/json"      -d '{"droneId":"rescue-one","lat":10.3796,"lng":123.9338,"altitudeM":40,"headingDeg":90,"accuracyM":2.5,"method":"sdk"}'
+   ```
+   `method` is `sdk` (DJI Mobile SDK app), `remote_id` (Remote ID receiver),
+   `mavlink` or `gps`. ArduPilot/PX4 need no bridge: set `MAVLINK_CONNECTION`
+   (and `DRONE_ID` to the stream name). With altitude and heading, detections
+   are placed at the person, not under the drone.
+2. **Pilot's phone (±150 m and up):** in the Field Responder app's Map tab, the
+   pilot enters the drone's name under **Drone pilot → I'm flying it**. Their
+   phone then stands in for the drone, drawn as a wide dashed circle.
+   `PILOT_STANDOFF_M` (default 150) is how far a drone is assumed to fly from its pilot.
+3. **Unknown:** the drone is listed as "location unknown". Its detections still
+   show on the live feed but don't enter Detection Review, which needs a position.
+
+Outside demo mode nothing is simulated: the built-in flight model only runs with `DEMO_MODE=true`.
+
 ### Sign-in and security
 
 Sign-in runs on the API, not in the browser ([api/services/auth.py](api/services/auth.py)).

@@ -74,4 +74,12 @@ export interface Detection {
   reviewedByUserId?: string
   reviewedAt?: string
   reviewerNotes?: string
+  /**
+   * Where `location` came from (api/services/drone_locations.py): the drone's
+   * own GPS, its pilot's phone (somewhere near the pilot), or the demo-mode
+   * simulation; and how far off it may be. Only on detections ingested from
+   * the API — mock detections have neither.
+   */
+  locationSource?: 'drone_gps' | 'pilot' | 'simulated'
+  locationAccuracyM?: number
 }

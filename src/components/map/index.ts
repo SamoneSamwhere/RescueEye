@@ -12,7 +12,7 @@ export {
   hasActiveMarkerFilters,
   toggleFilterValue,
 } from './markerFilters'
-export type { MapMarker, IncidentMapMarker, DetectionMapMarker, ResponderMapMarker } from './types'
+export type { MapMarker, IncidentMapMarker, DetectionMapMarker, ResponderMapMarker, DroneMapMarker } from './types'
 export type { MarkerFilters } from './markerFilters'
 export type { GeoMapCanvasProps } from './GeoMapCanvas'
 export type { GeoRouteMapProps } from './GeoRouteMap'

@@ -4,6 +4,7 @@ import { Panel, Button, Badge } from '../ui'
 import { cn } from '../../lib/cn'
 import { SCENE_DAMAGE_LABEL } from '../../lib/labels'
 import { feedMjpegUrl, useFeedDetection } from '../../features/media/useFeeds'
+import { useDronePositions } from '../../features/media/useDronePositions'
 import type { DetectionBox, Feed, SceneLabel } from '../../features/media/useFeeds'
 
 export interface LiveFeedPanelProps {
@@ -237,6 +238,7 @@ export function LiveFeedPanel({
           <Badge tone={feed.kind === 'upload' ? 'neutral' : 'info'}>
             {feed.kind === 'upload' ? 'Recorded' : feed.kind === 'live' ? 'Live source' : 'Synthetic'}
           </Badge>
+          {feed.droneId ? <DroneLocationBadge droneId={feed.droneId} /> : null}
           {detection.modelVersion ? (
             <span className={cn('text-xs', detection.modelVersion === 'custom_v1' ? 'text-foreground-muted' : 'text-warning')}>
               model: {detection.modelVersion}
@@ -245,5 +247,33 @@ export function LiveFeedPanel({
         </div>
       </div>
     </Panel>
+  )
+}
+
+
+/**
+ * Where this feed's drone is believed to be, and how well. A casualty spotted
+ * on a feed whose drone has no position cannot be placed on the map, so the
+ * operator has to know that before relying on the review queue.
+ */
+function DroneLocationBadge({ droneId }: { droneId: string }) {
+  const { data: drones } = useDronePositions()
+  if (!drones) return null
+  const location = drones.find((d) => d.droneId === droneId)?.location
+  if (!location) {
+    return (
+      <Badge tone="warning" title="This drone reports no GPS. Connect a telemetry bridge, or have its pilot turn on 'I'm flying this drone' in the Field Responder app.">
+        Drone location unknown
+      </Badge>
+    )
+  }
+  if (location.source === 'simulated') return <Badge tone="neutral">Simulated position</Badge>
+  const metres = `±${Math.round(location.accuracyM)} m`
+  return location.source === 'pilot' ? (
+    <Badge tone="warning" title="Shown around the pilot's phone; the drone is somewhere inside that circle.">
+      Near pilot {metres}
+    </Badge>
+  ) : (
+    <Badge tone="success">Drone GPS {metres}</Badge>
   )
 }

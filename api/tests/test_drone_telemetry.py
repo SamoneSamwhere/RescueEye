@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 from auth_helpers import AUTH_HEADERS
 
 from main import app
-from services.detection_store import CEBU_LAT, CEBU_LNG
+from services.drone_telemetry import CEBU_LAT, CEBU_LNG
 from services import drone_telemetry
 
 

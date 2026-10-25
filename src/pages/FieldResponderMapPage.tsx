@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { ChevronRight, Route, Users, MapPinned, X } from 'lucide-react'
 import { MobileShell } from '../components/layout'
 import { Card, PriorityBadge, MissionStatusBadge } from '../components/ui'
+import { PilotModeCard } from '../components/field-responder/PilotModeCard'
 import { GeoMapCanvas, MapLegend, MarkerDetailPanel } from '../components/map'
 import type { MapMarker, IncidentMapMarker } from '../components/map'
 import { useAuth } from '../features/auth'
@@ -33,7 +34,7 @@ import { fieldResponderMissionDetailPath } from '../routes/paths'
  */
 export function FieldResponderMapPage() {
   const { session } = useAuth()
-  const { missions, location } = useFieldResponderData()
+  const { missions, location, pilotDrone, setPilotDrone } = useFieldResponderData()
   const { missions: allMissions } = useMissionStore()
   const { positions } = useLiveUpdates()
   const { incidents } = useIncidentStore()
@@ -222,6 +223,8 @@ export function FieldResponderMapPage() {
             </p>
           </Card>
         )}
+
+        <PilotModeCard pilotDrone={pilotDrone} onChange={setPilotDrone} />
       </div>
     </MobileShell>
   )

@@ -50,19 +50,20 @@ def test_ring_buffer_evicts_oldest_beyond_max_stored():
     assert f"d{ds.MAX_STORED + 9}" in ids
 
 
-def test_random_cebu_coord_within_bounding_box():
-    for _ in range(50):
-        lat, lng = ds._random_cebu_coord()
-        assert ds.CEBU_LAT[0] <= lat <= ds.CEBU_LAT[1]
-        assert ds.CEBU_LNG[0] <= lng <= ds.CEBU_LNG[1]
+def test_detection_keeps_the_position_it_was_stamped_with():
+    ds.add_detections([{**_det(), "lat": 10.3797, "lng": 123.9339,
+                        "location_source": "drone_gps", "location_accuracy_m": 4.0, "drone_id": "alpha"}],
+                      inference_time_ms=1.0)
+    d = ds.get_recent(limit=1)[0]
+    assert (d["lat"], d["lng"]) == (10.3797, 123.9339)
+    assert (d["location_source"], d["location_accuracy_m"], d["drone_id"]) == ("drone_gps", 4.0, "alpha")
 
 
-def test_added_detections_get_lat_lng_within_bounds():
+def test_detection_with_no_position_is_not_given_a_made_up_one():
     ds.add_detections([_det()], inference_time_ms=1.0)
-    recent = ds.get_recent(limit=1)
-    d = recent[0]
-    assert ds.CEBU_LAT[0] <= d["lat"] <= ds.CEBU_LAT[1]
-    assert ds.CEBU_LNG[0] <= d["lng"] <= ds.CEBU_LNG[1]
+    d = ds.get_recent(limit=1)[0]
+    assert d["lat"] is None and d["lng"] is None
+    assert d["location_source"] is None
 
 
 # ── Per-detection snapshots ───────────────────────────────────────────────────

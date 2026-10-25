@@ -8,4 +8,5 @@ export const MARKER_COLOR: Record<MapMarker['kind'], string> = {
   INCIDENT: '#ff3b3b',
   DETECTION: '#ffdc00',
   RESPONDER: '#00d4ff',
+  DRONE: '#b06bff',
 }

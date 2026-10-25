@@ -237,6 +237,20 @@ class Feed:
         with self.lock:
             return self.current_frame, self.seq
 
+    @property
+    def drone_id(self) -> str | None:
+        """
+        Which drone this feed shows, for looking up its position
+        (services/drone_locations.py): the stream name for an ingested drone
+        ("live/alpha" -> "alpha"), else the feed's name. None for recordings.
+        """
+        if self.ingest_path:
+            return self.ingest_path.split("/", 1)[-1]
+        if self.kind != "live":
+            return None
+        from services.drone_ingest import slugify
+        return slugify(self.label)
+
     def to_dict(self) -> dict:
         return {
             "id":        self.id,
@@ -248,6 +262,7 @@ class Feed:
             "hasFrame":  self.current_frame is not None,
             "createdAt": self.created_at,
             "ingestPath": self.ingest_path,
+            "droneId":   self.drone_id,
         }
 
 

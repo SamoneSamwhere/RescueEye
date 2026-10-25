@@ -5,6 +5,7 @@ import { formatDateTime } from '../../lib/formatDateTime'
 import { commandStaffIncidentDetailPath } from '../../routes/paths'
 import { DETECTION_CATEGORY_LABEL, DAMAGE_CLASSIFICATION_LABEL } from '../../lib/labels'
 import { suggestPriority } from '../../lib/priority'
+import { locationAccuracyText } from '../../lib/detectionLocation'
 import { DetectionMediaPreview } from './DetectionMediaPreview'
 import type { IncidentPriority } from '../../types/incident'
 import type { EnrichedDetection } from './types'
@@ -88,7 +89,12 @@ export function DetectionDetailPanel({
             <DetailField
               icon={MapPin}
               label="Location"
-              value={`${detection.location.lat.toFixed(4)}, ${detection.location.lng.toFixed(4)}`}
+              value={[
+                `${detection.location.lat.toFixed(4)}, ${detection.location.lng.toFixed(4)}`,
+                locationAccuracyText(detection),
+              ]
+                .filter(Boolean)
+                .join(' · ')}
             />
             <div className="flex items-start gap-2">
               <Flag className="mt-0.5 size-4 shrink-0 text-foreground-muted" />

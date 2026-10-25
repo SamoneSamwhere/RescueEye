@@ -34,8 +34,12 @@ export interface ApiDetection {
   confidence: number
   bbox: { x: number; y: number; w: number; h: number }
   timestamp: string
-  lat: number
-  lng: number
+  /** Null when nothing knew where the drone was (api/services/drone_locations.py). */
+  lat: number | null
+  lng: number | null
+  /** drone_gps | pilot | simulated; null when the position is unknown. */
+  location_source?: Detection['locationSource'] | null
+  location_accuracy_m?: number | null
   inference_time_ms: number
   frame_width: number
   frame_height: number
@@ -84,8 +88,13 @@ function toCategory(cls: string): DetectionCategory {
  * escalate. That transparency is the point: a silently dropped box looks like
  * a missed detection.
  */
-function isReviewable(d: ApiDetection): boolean {
-  return d.class !== 'person'
+/**
+ * A casualty with no position cannot be put on the map or dispatched to, so it
+ * stays a box on the live feed (which says the drone's location is unknown)
+ * instead of entering the review queue at a made-up point.
+ */
+function isReviewable(d: ApiDetection): d is ApiDetection & { lat: number; lng: number } {
+  return d.class !== 'person' && d.lat !== null && d.lng !== null
 }
 
 /**
@@ -104,7 +113,7 @@ function toPercentBox(d: ApiDetection): BoundingBox {
   }
 }
 
-export function toDetection(d: ApiDetection, mediaAssetId: string): Detection {
+export function toDetection(d: ApiDetection & { lat: number; lng: number }, mediaAssetId: string): Detection {
   const category = toCategory(d.class)
   return {
     // Keyed by subject, not by frame: re-detecting the same casualty updates
@@ -124,6 +133,8 @@ export function toDetection(d: ApiDetection, mediaAssetId: string): Detection {
     casualtyScore: d.casualty_score,
     casualtyReasons: d.casualty_reasons,
     sceneDamage: d.scene ?? undefined,
+    locationSource: d.location_source ?? undefined,
+    locationAccuracyM: d.location_accuracy_m ?? undefined,
   }
 }
 
@@ -240,7 +251,7 @@ export function useLiveDetections({
     // Keep only the strongest sighting of each subject in this batch, so a
     // burst of frames produces one decision rather than a queue of near
     // duplicates. Oldest first, so store ordering ends up chronological.
-    const best = new Map<string, ApiDetection>()
+    const best = new Map<string, (typeof items)[number]>()
     for (const item of [...items].reverse()) {
       const key = subjectKey(item)
       const prev = best.get(key)
@@ -291,6 +302,8 @@ export function useLiveDetections({
           casualtyReasons: next.casualtyReasons,
           // The scene travels with the frame it was judged on, for the same reason.
           sceneDamage: next.sceneDamage,
+          locationSource: next.locationSource,
+          locationAccuracyM: next.locationAccuracyM,
         })
       }
     }

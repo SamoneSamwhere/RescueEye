@@ -71,10 +71,12 @@ export function DamageMapCanvas({ markers, selectedId, onSelect }: DamageMapCanv
             iconClasses = style.classes
             Icon = style.icon
             size = 'size-6'
-          } else {
+          } else if (marker.kind === 'RESPONDER') {
             iconClasses = marker.missionStatus ? MISSION_DOT[marker.missionStatus] : 'bg-neutral ring-neutral-border'
             Icon = Navigation2
             size = 'size-6'
+          } else {
+            return null // This legacy canvas predates drones; GeoMapCanvas draws them.
           }
 
           return (

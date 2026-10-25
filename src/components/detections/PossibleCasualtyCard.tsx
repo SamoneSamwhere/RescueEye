@@ -4,6 +4,7 @@ import { Button, Badge } from '../ui'
 import { formatDateTime } from '../../lib/formatDateTime'
 import { CASUALTY_REASON_LABEL, SUPPORTING_CASUALTY_REASONS } from '../../lib/labels'
 import { cn } from '../../lib/cn'
+import { locationAccuracyText } from '../../lib/detectionLocation'
 import type { Detection } from '../../types/detection'
 
 export interface PossibleCasualtyCardProps {
@@ -69,6 +70,7 @@ export function PossibleCasualtyCard({ detection, onVerify, verifying = false }:
           <p className="mt-0.5 truncate text-xs text-foreground-muted">
             {formatDateTime(detection.detectedAt)} · {detection.location.lat.toFixed(5)},{' '}
             {detection.location.lng.toFixed(5)}
+            {locationAccuracyText(detection) ? ` · ${locationAccuracyText(detection)}` : ''}
           </p>
 
           {casualtyPercent != null ? (

@@ -19,7 +19,7 @@ import time
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
-from services import telemetry_sources
+from services import drone_locations, feed_registry, telemetry_sources
 from services.drone_telemetry import current_state, is_simulated
 from services.telemetry_sources import STALE_AFTER_S, TelemetryFix
 
@@ -56,6 +56,15 @@ class TelemetryIn(BaseModel):
     droneId: str = "DRN-01"
     callsign: str = "Rescue-1"
     altitudeM: float | None = Field(default=None, description="Metres above ground")
+    accuracyM: float | None = Field(
+        default=None, gt=0, le=10_000,
+        description="Horizontal accuracy of this fix in metres, if the bridge knows it "
+                    "(GPS HDOP x UERE, a Remote ID accuracy class, ...). Shown on the map.",
+    )
+    method: str | None = Field(
+        default=None, pattern=r"^(sdk|remote_id|mavlink|gps|push)$",
+        description="How the bridge got the fix: sdk (DJI Mobile SDK), remote_id, mavlink, gps.",
+    )
     headingDeg: float | None = Field(default=None, ge=0, lt=360)
     speedMps: float | None = Field(default=None, ge=0)
     gimbalPitchDeg: float | None = Field(
@@ -109,6 +118,7 @@ async def push_telemetry(payload: TelemetryIn):
             heading_deg=payload.headingDeg,
             speed_mps=payload.speedMps,
             gimbal_pitch_deg=payload.gimbalPitchDeg,
+            extra={k: v for k, v in (("accuracy_m", payload.accuracyM), ("method", payload.method)) if v},
         )
     )
     return {"ok": True, "droneId": payload.droneId, "staleAfterSeconds": STALE_AFTER_S}
@@ -141,3 +151,26 @@ async def telemetry_sources_status():
             "simulated": {"available": True},
         },
     }
+
+
+@router.get("/positions", dependencies=[Depends(current_user)])
+async def drone_positions() -> dict:
+    """
+    Every drone that is streaming or reporting a position, for the Damage Map.
+
+    `location` is null when nothing knows where a streaming drone is - the map
+    lists it as "location unknown" rather than placing it anywhere.
+    """
+    feeds = {f.drone_id: f for f in feed_registry.list_feeds() if f.drone_id}
+    drones = []
+    for drone_id in sorted(set(feeds) | drone_locations.known_drone_ids()):
+        feed = feeds.get(drone_id)
+        location = drone_locations.locate(drone_id)
+        drones.append({
+            "droneId": drone_id,
+            "label": feed.label if feed else drone_id.replace("-", " ").title(),
+            "feedId": feed.id if feed else None,
+            "streaming": bool(feed and feed.current_frame is not None),
+            "location": location.to_dict() if location else None,
+        })
+    return {"drones": drones, "pilotStandoffM": drone_locations.PILOT_STANDOFF_M}

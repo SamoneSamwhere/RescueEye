@@ -20,7 +20,7 @@ import logging
 from fastapi import APIRouter, Body, Depends, HTTPException
 
 from routers.deps import current_user, require_roles
-from services import auth, live_hub, responder_registry
+from services import auth, drone_locations, live_hub, responder_registry
 
 logger = logging.getLogger("rescueeye.responders")
 router = APIRouter()
@@ -97,6 +97,19 @@ async def record_device_fix(responder_id: str, payload: dict, user: auth.Princip
     position = responder_registry.report(
         responder_id, lat, lng, str(payload.get("name") or ""), source="device", agency_id=user.agency_id,
     )
+    # A responder flying a drone that reports no GPS of its own: their phone
+    # stands in for the drone's position, with a wide accuracy circle.
+    pilot_of = str(payload.get("pilotOf") or "").strip()
+    if pilot_of:
+        from services.drone_ingest import slugify
+        accuracy = payload.get("accuracy")
+        drone_locations.report_pilot(
+            slugify(pilot_of), lat, lng,
+            float(accuracy) if isinstance(accuracy, (int, float)) and accuracy > 0 else None,
+            responder_id, str(payload.get("name") or ""), user.agency_id,
+        )
+    else:
+        drone_locations.stop_piloting(responder_id)
     body = position_payload(position)
     await live_hub.broadcast({"type": "responder_location", "responder": body}, user.agency_id)
     return body

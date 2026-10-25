@@ -23,6 +23,14 @@ function DetailRow({ label, children }: DetailRowProps) {
   )
 }
 
+const DRONE_METHOD_LABEL: Record<string, string> = {
+  sdk: 'DJI Mobile SDK',
+  remote_id: 'Remote ID',
+  mavlink: 'MAVLink',
+  gps: 'GPS',
+  push: 'telemetry bridge',
+}
+
 const RESPONDER_STATUS_TONE: Record<MissionStatus, 'neutral' | 'success' | 'warning' | 'info'> = {
   PENDING: 'warning',
   ACCEPTED: 'info',
@@ -43,6 +51,37 @@ export function MarkerDetailPanel({ marker, showIncidentLink = true }: MarkerDet
     return (
       <Panel title="Marker Details">
         <EmptyState icon={MapPinned} title="No marker selected" description="Select a marker on the map to view its details." />
+      </Panel>
+    )
+  }
+
+  if (marker.kind === 'DRONE') {
+    const sourceText =
+      marker.source === 'drone_gps'
+        ? `Drone GPS (${DRONE_METHOD_LABEL[marker.method] ?? marker.method})`
+        : marker.source === 'pilot'
+          ? `Pilot's phone${marker.pilotName ? ` — ${marker.pilotName}` : ''}`
+          : 'Simulated (demo mode)'
+    return (
+      <Panel title="Drone">
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-semibold text-foreground">{marker.label}</span>
+            <Badge tone={marker.streaming ? 'success' : 'neutral'}>{marker.streaming ? 'Streaming' : 'Not streaming'}</Badge>
+          </div>
+          <DetailRow label="Position from">{sourceText}</DetailRow>
+          <DetailRow label="Accuracy">
+            {marker.source === 'simulated' ? '—' : `±${Math.round(marker.accuracyM)} m`}
+          </DetailRow>
+          {marker.altitudeM != null ? <DetailRow label="Altitude">{Math.round(marker.altitudeM)} m</DetailRow> : null}
+          {marker.headingDeg != null ? <DetailRow label="Heading">{Math.round(marker.headingDeg)}°</DetailRow> : null}
+          <DetailRow label="Updated">{marker.ageS < 2 ? 'just now' : `${Math.round(marker.ageS)} s ago`}</DetailRow>
+          {marker.source === 'pilot' ? (
+            <p className="text-xs text-foreground-muted">
+              This drone sends no GPS of its own, so it is shown around its pilot. It is somewhere inside the circle.
+            </p>
+          ) : null}
+        </div>
       </Panel>
     )
   }

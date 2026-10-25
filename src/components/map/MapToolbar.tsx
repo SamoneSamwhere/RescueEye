@@ -16,6 +16,7 @@ const LAYERS: { kind: MapMarker['kind']; label: string }[] = [
   { kind: 'INCIDENT', label: 'Incidents' },
   { kind: 'DETECTION', label: 'Verified detections' },
   { kind: 'RESPONDER', label: 'Responders' },
+  { kind: 'DRONE', label: 'Drones' },
 ]
 
 interface MapToolbarProps {

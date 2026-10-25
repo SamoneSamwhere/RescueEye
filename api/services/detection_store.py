@@ -4,15 +4,12 @@ Shared across detect, classify, and the /detections/recent endpoint.
 Phase 3 will replace this with Firestore persistence.
 """
 import io
-import random
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Deque
 
 # Cebu City bounding box for simulated GPS coordinates
-CEBU_LAT = (10.28, 10.35)
-CEBU_LNG = (123.87, 123.92)
 
 MAX_STORED = 200
 
@@ -24,8 +21,9 @@ class StoredDetection:
     confidence: float
     bbox: dict
     timestamp: str
-    lat: float
-    lng: float
+    # None when nothing knew where the drone was (services/drone_locations.py).
+    lat: float | None
+    lng: float | None
     inference_time_ms: float
     # Size of the frame the bbox was measured in. Without it a consumer cannot
     # turn pixel boxes into the percentages the review UI draws with, and the
@@ -51,6 +49,11 @@ class StoredDetection:
     # bounded deque, so old crops are evicted with their detection and nothing
     # accumulates on disk.
     snapshot: bytes | None = None
+    # Where `lat`/`lng` came from - drone_gps | pilot | simulated - and how far
+    # off it may be, so the map can draw the uncertainty instead of a false pin.
+    location_source: str | None = None
+    location_accuracy_m: float | None = None
+    drone_id: str | None = None
 
 
 # Context kept around the box so a reviewer can see where the subject is,
@@ -86,19 +89,6 @@ def _crop_snapshot(frame, bbox: dict) -> bytes | None:
 _store: Deque[StoredDetection] = deque(maxlen=MAX_STORED)
 
 
-def _random_cebu_coord() -> tuple[float, float]:
-    lat = round(random.uniform(*CEBU_LAT), 6)
-    lng = round(random.uniform(*CEBU_LNG), 6)
-    return lat, lng
-
-
-# Public helper so the detect handler can stamp a coordinate onto a detection
-# BEFORE storing/bridging, ensuring the map, the recent-detections feed, and
-# the created incident all agree on where the drone spotted the casualty.
-def random_coord() -> tuple[float, float]:
-    return _random_cebu_coord()
-
-
 def add_detections(detections: list[dict], inference_time_ms: float,
                    frame_width: int = 0, frame_height: int = 0,
                    frame=None, scene: dict | None = None) -> None:
@@ -107,12 +97,10 @@ def add_detections(detections: list[dict], inference_time_ms: float,
         {k: scene[k] for k in ("label", "confidence", "severity") if k in scene} if scene else None
     )
     for det in detections:
-        # Reuse the coordinate already assigned to the detection (so the
-        # incident lands at the same spot), falling back to a fresh one.
-        if det.get("lat") is not None and det.get("lng") is not None:
-            lat, lng = det["lat"], det["lng"]
-        else:
-            lat, lng = _random_cebu_coord()
+        # The coordinate the detect pass stamped on, or None. This used to
+        # invent a random point in Cebu when there was none, which put
+        # casualties on streets they were never on.
+        lat, lng = det.get("lat"), det.get("lng")
         _store.append(
             StoredDetection(
                 id=det.get("id", ""),
@@ -130,6 +118,9 @@ def add_detections(detections: list[dict], inference_time_ms: float,
                 casualty_score=det.get("casualty_score"),
                 casualty_reasons=det.get("casualty_reasons"),
                 scene=scene_fields,
+                location_source=det.get("location_source"),
+                location_accuracy_m=det.get("location_accuracy_m"),
+                drone_id=det.get("drone_id"),
             )
         )
 
@@ -153,6 +144,9 @@ def get_recent(limit: int = 20) -> list[dict]:
             "casualty_score": d.casualty_score,
             "casualty_reasons": d.casualty_reasons,
             "scene": d.scene,
+            "location_source": d.location_source,
+            "location_accuracy_m": d.location_accuracy_m,
+            "drone_id": d.drone_id,
         }
         for d in reversed(items)
     ]

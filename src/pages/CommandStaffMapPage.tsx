@@ -15,7 +15,7 @@ import type { IncidentMapMarker, MapMarker, MarkerFilters } from '../components/
 import { useDamageMapMarkers } from '../features/command-staff'
 
 function countByKind(markers: MapMarker[]): Record<MapMarker['kind'], number> {
-  const counts = { INCIDENT: 0, DETECTION: 0, RESPONDER: 0 }
+  const counts = { INCIDENT: 0, DETECTION: 0, RESPONDER: 0, DRONE: 0 }
   for (const marker of markers) counts[marker.kind] += 1
   return counts
 }
@@ -50,7 +50,7 @@ export function CommandStaffMapPage() {
     <div className="flex flex-col xl:h-[calc(100vh-3.5rem)] xl:overflow-hidden">
       <PageHeader
         title="Damage Map"
-        description="Confirmed incidents, verified detections and Field Responder positions across the Cebu City survey area."
+        description="Confirmed incidents, verified detections, Field Responders and drones across the survey area."
       />
 
       <Reveal className="grid grid-cols-1 gap-4 px-4 py-4 xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(0,1fr)_340px] xl:grid-rows-[minmax(0,1fr)]">

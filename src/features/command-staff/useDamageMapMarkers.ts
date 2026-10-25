@@ -8,6 +8,7 @@ import { mockUsers } from '../../data/mockUsers'
 import { MAP_VISIBLE_MISSION_STATUSES } from '../../lib/missionStatus'
 import { useCommandStaffData } from './CommandStaffDataProvider'
 import { useLiveUpdates } from '../../state/LiveUpdatesStore'
+import { droneMarker, useDronePositions } from '../media/useDronePositions'
 
 /**
  * Every marker on the Command Staff Damage Map.
@@ -29,6 +30,7 @@ export function useDamageMapMarkers(): MapMarker[] {
     enabled: isDbId(agencyId),
     staleTime: 60_000,
   })
+  const { data: drones = [] } = useDronePositions()
 
   return useMemo(() => {
     const incidentMarkers: MapMarker[] = incidents
@@ -121,6 +123,13 @@ export function useDamageMapMarkers(): MapMarker[] {
         }
       })
 
-    return [...incidentMarkers, ...detectionMarkers, ...responderMarkers]
-  }, [detections, incidents, missions, agencyId, positions, dbResponders])
+    // Drones whose position is known; one nothing knows about is listed
+    // elsewhere as "location unknown" rather than pinned anywhere.
+    const droneMarkers: MapMarker[] = drones.flatMap((drone) => {
+      const marker = droneMarker(drone)
+      return marker ? [marker] : []
+    })
+
+    return [...incidentMarkers, ...detectionMarkers, ...responderMarkers, ...droneMarkers]
+  }, [detections, incidents, missions, agencyId, positions, dbResponders, drones])
 }

@@ -23,7 +23,6 @@ import threading
 import time
 from dataclasses import dataclass
 
-from services.detection_store import CEBU_LAT, CEBU_LNG
 from services import telemetry_sources
 
 # Nominal survey speed for a quadcopter on a search pattern (m/s).
@@ -40,6 +39,9 @@ EDGE_MARGIN = 0.12
 # One degree of latitude in metres. Longitude is scaled by cos(latitude).
 METRES_PER_DEG_LAT = 111_320.0
 
+# The demo flight stays over Cebu City.
+CEBU_LAT = (10.28, 10.35)
+CEBU_LNG = (123.87, 123.92)
 LAT_MIN, LAT_MAX = CEBU_LAT
 LNG_MIN, LNG_MAX = CEBU_LNG
 LAT_CENTRE = (LAT_MIN + LAT_MAX) / 2
@@ -193,6 +195,14 @@ def current_state(drone_id: str | None = None) -> DroneState:
                               else float(os.getenv("GIMBAL_PITCH_DEG", "-90"))),
         )
 
+    return simulated_state()
+
+
+def simulated_state() -> DroneState:
+    """
+    The built-in flight model's current position. Demo mode only in anything
+    that reaches the map (services/drone_locations.py): it is not a drone.
+    """
     global _state
     with _lock:
         if _state is None:

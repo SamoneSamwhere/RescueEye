@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react'
-import { MapContainer, CircleMarker, Tooltip, useMap } from 'react-leaflet'
+import { MapContainer, Circle, CircleMarker, Tooltip, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import type { LatLngExpression } from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -50,6 +50,7 @@ const MARKER_STYLE: Record<MapMarker['kind'], MarkerVisual> = {
   INCIDENT: { color: MARKER_COLOR.INCIDENT, radius: 10 },
   DETECTION: { color: MARKER_COLOR.DETECTION, radius: 8 },
   RESPONDER: { color: MARKER_COLOR.RESPONDER, radius: 7 },
+  DRONE: { color: MARKER_COLOR.DRONE, radius: 8 },
 }
 
 /** Distinct from the other responders' cyan so "me" never reads as "a colleague". */
@@ -69,7 +70,36 @@ function markerLabel(marker: MapMarker, selfResponderId?: string): string {
       const name = isSelf(marker, selfResponderId) ? 'You' : marker.name
       return marker.missionStatus ? `${name} · ${RESPONDER_STATUS_LABEL[marker.missionStatus]}` : `${name} · Available`
     }
+    case 'DRONE':
+      return marker.source === 'pilot'
+        ? `${marker.label} · near pilot (±${Math.round(marker.accuracyM)} m)`
+        : marker.source === 'simulated'
+          ? `${marker.label} · simulated (demo)`
+          : `${marker.label} · ±${Math.round(marker.accuracyM)} m`
   }
+}
+
+/**
+ * Where a drone may actually be: the accuracy of its position as a circle,
+ * dashed for a pilot-phone estimate. A dot alone would claim a precision the
+ * position does not have.
+ */
+function DroneAccuracy({ marker }: { marker: MapMarker }) {
+  if (marker.kind !== 'DRONE' || marker.accuracyM < 1) return null
+  return (
+    <Circle
+      center={[marker.location.lat, marker.location.lng]}
+      radius={marker.accuracyM}
+      interactive={false}
+      pathOptions={{
+        color: MARKER_COLOR.DRONE,
+        weight: 1.5,
+        dashArray: marker.source === 'pilot' ? '6 6' : undefined,
+        fillColor: MARKER_COLOR.DRONE,
+        fillOpacity: marker.source === 'pilot' ? 0.06 : 0.15,
+      }}
+    />
+  )
 }
 
 /**
@@ -172,7 +202,8 @@ function ClusterLayer({ markers, selectedId, onSelect, selfResponderId }: {
       maxClusterRadius: 48,
     })
 
-    for (const marker of markers) {
+    // Drones move every second and are never clustered (see the JSX below).
+    for (const marker of markers.filter((m) => m.kind !== 'DRONE')) {
       const self = isSelf(marker, selfResponderId)
       const style = self ? SELF_STYLE : MARKER_STYLE[marker.kind]
       const isSelected = marker.id === selectedId
@@ -204,6 +235,7 @@ export function MapLegend({ includeSelf = false, showDetections = true }: { incl
     { color: MARKER_STYLE.INCIDENT.color, label: 'Confirmed incident' },
     ...(showDetections ? [{ color: MARKER_STYLE.DETECTION.color, label: 'Verified detection' }] : []),
     { color: MARKER_STYLE.RESPONDER.color, label: 'Responder' },
+    { color: MARKER_STYLE.DRONE.color, label: 'Drone' },
   ]
   if (includeSelf) entries.push({ color: SELF_STYLE.color, label: 'You' })
 
@@ -269,7 +301,9 @@ export function GeoMapCanvas({ markers, selectedId, onSelect, selfResponderId, c
           />
         ) : null}
 
-        {(cluster ? [] : markers).map((marker) => {
+        {markers.map((marker) => <DroneAccuracy key={`${marker.id}-accuracy`} marker={marker} />)}
+
+        {(cluster ? markers.filter((m) => m.kind === 'DRONE') : markers).map((marker) => {
           const self = isSelf(marker, selfResponderId)
           const style = self ? SELF_STYLE : MARKER_STYLE[marker.kind]
           const isSelected = marker.id === selectedId

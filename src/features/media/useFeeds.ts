@@ -23,6 +23,10 @@ export interface Feed {
   active: boolean
   producer: string
   hasFrame: boolean
+  /** Set when an ingested drone opened this feed, e.g. "live/alpha" (api/services/drone_ingest.py). */
+  ingestPath?: string | null
+  /** Which drone this feed shows, for looking up its position; null for recordings. */
+  droneId?: string | null
 }
 
 interface FeedListResponse {

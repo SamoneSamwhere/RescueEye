@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo } from 'react'
+import { createContext, useContext, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { now } from '../../lib/now'
 import { generateId } from '../../lib/id'
@@ -29,6 +29,22 @@ interface FieldResponderDataContextValue {
   completeMission: (missionId: string) => void
   /** This device's GPS sharing, started automatically once the responder is logged in. */
   location: LocationSharingState
+  /**
+   * The drone this responder is flying, or null. While set, their phone's
+   * position stands in for a drone that sends no GPS of its own.
+   */
+  pilotDrone: string | null
+  setPilotDrone: (droneName: string | null) => void
+}
+
+const PILOT_STORAGE_KEY = 'rescueeye.pilotDrone'
+
+function readPilotDrone(): string | null {
+  try {
+    return window.localStorage.getItem(PILOT_STORAGE_KEY)
+  } catch {
+    return null
+  }
 }
 
 const FieldResponderDataContext = createContext<FieldResponderDataContextValue | undefined>(undefined)
@@ -49,7 +65,18 @@ export function FieldResponderDataProvider({ children }: { children: ReactNode }
   const { addNotification } = useNotificationStore()
   // This provider is mounted only for a logged-in Field Responder, so sharing
   // starts at login and stops at logout without any extra wiring.
-  const location = useLocationSharing(session ? { id: session.id, name: session.name } : null)
+  const [pilotDrone, setPilotDroneState] = useState<string | null>(readPilotDrone)
+  function setPilotDrone(droneName: string | null) {
+    const value = droneName?.trim() || null
+    setPilotDroneState(value)
+    try {
+      if (value) window.localStorage.setItem(PILOT_STORAGE_KEY, value)
+      else window.localStorage.removeItem(PILOT_STORAGE_KEY)
+    } catch {
+      // Not remembered across reloads; pilot mode still works for this session.
+    }
+  }
+  const location = useLocationSharing(session ? { id: session.id, name: session.name } : null, pilotDrone)
 
   const missions = useMemo(
     () => allMissions.filter((mission) => mission.responderUserId === session?.id),
@@ -153,6 +180,8 @@ export function FieldResponderDataProvider({ children }: { children: ReactNode }
         arrivalCheck,
         completeMission,
         location,
+        pilotDrone,
+        setPilotDrone,
       }}
     >
       {children}

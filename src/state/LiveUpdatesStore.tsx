@@ -32,6 +32,10 @@ export interface OutgoingLocationMessage {
   name: string
   lat: number
   lng: number
+  /** The phone's own horizontal accuracy in metres, when it reports one. */
+  accuracy?: number
+  /** Set while this responder is flying a drone that sends no GPS: their phone stands in for it. */
+  pilotOf?: string
 }
 
 interface LiveUpdatesContextValue {

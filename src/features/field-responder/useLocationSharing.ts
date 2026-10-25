@@ -40,7 +40,11 @@ const HEARTBEAT_MS = 5_000
  * the socket is not connected the fix goes over REST instead, so a dropped
  * socket never stops the Damage Map from hearing about the responder.
  */
-export function useLocationSharing(responder: { id: string; name: string } | null): LocationSharingState {
+export function useLocationSharing(
+  responder: { id: string; name: string } | null,
+  /** Name of the drone this responder is flying, if any (see api/services/drone_locations.py). */
+  pilotOf: string | null = null,
+): LocationSharingState {
   const { send } = useLiveUpdates()
   const supported = typeof navigator !== 'undefined' && 'geolocation' in navigator
   const [state, setState] = useState<LocationSharingState>({
@@ -49,7 +53,8 @@ export function useLocationSharing(responder: { id: string; name: string } | nul
     updatedAt: null,
     heading: null,
   })
-  const latest = useRef<GeoPoint | null>(null)
+  const latest = useRef<(GeoPoint & { accuracy?: number }) | null>(null)
+  const pilotRef = useRef(pilotOf)
   const sendRef = useRef(send)
   useEffect(() => {
     sendRef.current = send
@@ -57,6 +62,13 @@ export function useLocationSharing(responder: { id: string; name: string } | nul
 
   const responderId = responder?.id
   const responderName = responder?.name ?? ''
+  const sendNow = useRef<() => void>(() => {})
+
+  // Starting or stopping pilot mode is reported at once, not on the next heartbeat.
+  useEffect(() => {
+    pilotRef.current = pilotOf
+    sendNow.current()
+  }, [pilotOf])
 
   useEffect(() => {
     if (!responderId || !supported) return
@@ -66,20 +78,24 @@ export function useLocationSharing(responder: { id: string; name: string } | nul
       const position = latest.current
       if (!position || !responderId) return
       lastSentAt = Date.now()
-      const sentOverSocket = sendRef.current({ type: 'location', responderId, name: responderName, ...position })
+      const pilot = pilotRef.current ? { pilotOf: pilotRef.current } : {}
+      const sentOverSocket = sendRef.current({ type: 'location', responderId, name: responderName, ...position, ...pilot })
       if (sentOverSocket) return
       api
-        .post(`/responders/${encodeURIComponent(responderId)}/location`, { ...position, name: responderName })
+        .post(`/responders/${encodeURIComponent(responderId)}/location`, { ...position, ...pilot, name: responderName })
         .catch(() => {
           // Best-effort: a missed report is replaced by the next one within seconds.
         })
     }
 
+    sendNow.current = sendLatest
+
     const watchId = navigator.geolocation.watchPosition(
       ({ coords, timestamp }) => {
         const position = { lat: coords.latitude, lng: coords.longitude }
         const heading = coords.heading !== null && !Number.isNaN(coords.heading) ? coords.heading : null
-        latest.current = position
+        // Accuracy rides along: as a drone pilot, this phone's error widens the drone's circle.
+        latest.current = Number.isFinite(coords.accuracy) ? { ...position, accuracy: coords.accuracy } : position
         setState({ status: 'sharing', position, updatedAt: timestamp, heading })
         if (Date.now() - lastSentAt >= MIN_SEND_INTERVAL_MS) sendLatest()
       },

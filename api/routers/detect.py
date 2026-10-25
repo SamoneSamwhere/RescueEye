@@ -41,10 +41,7 @@ from services.yolo_model import (
 from services import casualty as casualty_gate
 from services.detection_store import add_detections
 from services.egomotion import EgoMotionEstimator
-from services import georef
-from services.drone_telemetry import current_pitch_deg as drone_pitch
-from services.drone_telemetry import current_state as drone_state
-from services.drone_telemetry import current_position as drone_position
+from services import drone_locations, feed_registry, georef
 from services.tracker import Sort
 from routers.classify import classify_frame
 from routers.logs import append_log
@@ -164,15 +161,13 @@ async def _send_ntfy_alert(detection: dict) -> None:
     # alert had no relationship to where the casualty was reported.
     lat = detection.get("lat")
     lng = detection.get("lng")
-    if lat is None or lng is None:
-        lat, lng = drone_position()
-    lat, lng = round(lat, 4), round(lng, 4)
+    gps = f"{round(lat, 4)}, {round(lng, 4)}" if lat is not None and lng is not None else "unknown (no drone location)"
     conf_pct = round(detection["confidence"] * 100)
     tid = detection.get("track_id", "?")
     body = (
         f"Casualty detected — {conf_pct}% confidence\n"
         f"Track ID: #{tid}\n"
-        f"GPS: {lat}, {lng}\n"
+        f"GPS: {gps}\n"
         f"Dispatch nearest field team immediately."
     )
     try:
@@ -836,6 +831,8 @@ class StreamState:
     lock:      threading.Lock = field(default_factory=threading.Lock)
     scene:     dict | None = None
     scene_at:  float = float("-inf")
+    # The feed id this stream analyses, which says which drone it is.
+    key:       str | None = None
 
 
 # Plain /detect callers with no stream key keep the module-level objects, so
@@ -855,8 +852,29 @@ def stream_state(key: str | None) -> StreamState:
                 Sort(max_age=4, min_hits=1, iou_threshold=0.20),
                 EgoMotionEstimator(),
                 casualty_gate.StillnessMonitor(),
+                key=key,
             )
         return st
+
+
+DEFAULT_GIMBAL_PITCH_DEG = float(os.getenv("GIMBAL_PITCH_DEG", "-90"))
+
+
+def _drone_location(stream_key: str | None) -> drone_locations.DroneLocation | None:
+    """
+    Where the drone behind this stream is (services/drone_locations.py).
+
+    A feed of a live drone is looked up by its drone id. A recording, or a
+    caller with no feed, has no aircraft to ask; demo mode still gives it the
+    simulated track, and otherwise its detections carry no position at all.
+    """
+    drone_id = None
+    if stream_key:
+        try:
+            drone_id = feed_registry.get_feed(stream_key).drone_id
+        except feed_registry.FeedNotFound:
+            drone_id = None
+    return drone_locations.locate(drone_id or "")
 
 
 def drop_stream(key: str) -> None:
@@ -947,20 +965,27 @@ def _analyse(jpeg: bytes, stream: StreamState, want_annotation: bool,
         # frame is on the ground beneath the drone at this instant. Sampling a
         # fresh random coordinate per detection (the previous behaviour)
         # scattered casualties from a single frame kilometres apart on the map.
-        lat, lng = drone_position()
+        # It is *this* feed's drone, from the most accurate source available,
+        # and None when nothing knows where that drone is.
+        location = _drone_location(stream.key)
+        lat = round(location.lat, 6) if location else None
+        lng = round(location.lng, 6) if location else None
 
         # Each subject gets its own ground coordinate where the geometry allows
         # it, falling back to the drone's. `subject_located` records which
         # happened — the responder veto below must not act on a position that
         # is really the aircraft's, or a drone hovering near one rescuer would
         # suppress every casualty in the frame.
-        state = drone_state()
+        pitch_deg = (location.gimbal_pitch_deg
+                     if location and location.gimbal_pitch_deg is not None else DEFAULT_GIMBAL_PITCH_DEG)
         annotated = []
         for i, d in enumerate(detections):
+            # Placing a subject within the frame needs the aircraft's own GPS
+            # and altitude; a pilot-phone position only says "near the pilot".
             fix = georef.locate_detection(
                 d["bbox"], fw, fh, lat, lng,
-                state.altitude_m, state.heading_deg, state.gimbal_pitch_deg,
-            )
+                location.altitude_m, location.heading_deg, pitch_deg,
+            ) if location and location.can_georeference else None
             annotated.append({
                 **d,
                 "id": f"{frame_id[:8]}-{i}",
@@ -968,6 +993,11 @@ def _analyse(jpeg: bytes, stream: StreamState, want_annotation: bool,
                 "lat": round(fix[0], 6) if fix else lat,
                 "lng": round(fix[1], 6) if fix else lng,
                 "subject_located": fix is not None,
+                # How far off this position may be, and where it came from:
+                # drone_gps | pilot | simulated, or None when unknown.
+                "location_source": location.source if location else None,
+                "location_accuracy_m": round(location.accuracy_m, 1) if location else None,
+                "drone_id": location.drone_id if location else None,
             })
 
         # ── Casualty gate — which of these people are casualties ────────────
@@ -976,9 +1006,9 @@ def _analyse(jpeg: bytes, stream: StreamState, want_annotation: bool,
         # stillness is a property of a track rather than of a box.
         camera_motion = stream.egomotion.estimate(frame, exclude=annotated)
         stream.stillness.advance_camera(camera_motion, frame.shape)
-        # Camera pitch decides how posture is measured at all — straight down,
-        # the angle of a torso means the opposite of what it means from the side.
-        pitch_deg = drone_pitch()
+        # Camera pitch (read above with the position) decides how posture is
+        # measured at all — straight down, the angle of a torso means the
+        # opposite of what it means from the side.
         for det in annotated:
             verdict = casualty_gate.judge(det, _keypoints_for(det["bbox"], poses),
                                           frame.shape, pitch_deg, monitor=stream.stillness)
