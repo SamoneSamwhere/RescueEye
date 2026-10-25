@@ -129,6 +129,26 @@ registered Expo push token on the responder's `user` row every PUSH alert is.
 The in-app alert is sent either way. Alerts go only to accounts in the database —
 the built-in demo logins have no `user` row.
 
+### Connecting drones
+
+The API runs an always-on video receiver, [MediaMTX](https://github.com/bluenviron/mediamtx)
+([api/services/drone_ingest.py](api/services/drone_ingest.py)). Install it once:
+
+```bash
+cd api && .venv/Scripts/python.exe -m scripts.get_mediamtx
+```
+
+Then, per drone, **once**: Drones → Connect Drone → type the drone's name →
+scan the QR code (or copy the address) into **DJI Fly → Transmission → Live
+Streaming Platforms → RTMP**. The address is `rtmp://<this computer>:1935/live/<name>`.
+After that the pilot only presses **Go Live**: the feed opens on Live Monitoring
+by itself, with detection running (about 3 seconds from Go Live to video), and
+closes 10 seconds after the drone stops. Several drones share port 1935.
+
+- The phone must reach this computer (same Wi-Fi or hotspot). Video is
+  accepted from the network but only readable on this computer.
+- Without MediaMTX, Connect Drone falls back to arming one listener per connection.
+
 ### Sign-in and security
 
 Sign-in runs on the API, not in the browser ([api/services/auth.py](api/services/auth.py)).

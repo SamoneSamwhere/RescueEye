@@ -67,7 +67,9 @@ export function LiveFeedPanel({
   const tearingDown = useRef(false)
   const retryTimer = useRef<number | undefined>(undefined)
 
-  const streamSrc = `${feedMjpegUrl(feed.id)}?a=${attempt}`
+  // feedMjpegUrl may already carry ?token=, so the retry counter is appended, not started.
+  const base = feedMjpegUrl(feed.id)
+  const streamSrc = `${base}${base.includes('?') ? '&' : '?'}a=${attempt}`
 
   /**
    * `src` is driven here rather than through JSX on purpose.

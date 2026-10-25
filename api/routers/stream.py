@@ -27,6 +27,7 @@ from PIL import Image, ImageDraw
 from fastapi import APIRouter, Body, File, HTTPException, UploadFile
 from fastapi.responses import Response, StreamingResponse
 
+from services import drone_ingest
 from services import feed_registry as registry
 from services.feed_registry import (
     FeedLimitReached,
@@ -228,16 +229,34 @@ def _lan_addresses() -> list[str]:
 
 
 @router.get("/publish-target")
-async def publish_target(port: int = DEFAULT_RTMP_PORT, key: str = "dji"):
+async def publish_target(port: int = DEFAULT_RTMP_PORT, key: str = "dji", name: str | None = None):
     """
-    Where a push-only aircraft should send its stream, and what to register here.
+    Where a push-only aircraft should send its stream.
 
-    `listenSource` is what goes to POST /stream/feeds — a wildcard bind, so the
-    API receives the stream itself. `publishUrls` are what the pilot types into
-    the drone app, which must name a routable address rather than localhost.
+    With always-on ingest (services/drone_ingest.py, mode "server") each drone
+    gets its own address from `name`, nothing needs registering, and the feed
+    opens by itself when the drone goes live. `publishUrls` are what the pilot
+    puts into the drone app, which must name a routable address rather than
+    localhost.
+
+    Without it (mode "listener") `listenSource` is what goes to POST
+    /stream/feeds - a wildcard bind on one port, armed before the drone goes live.
     """
     addrs = _lan_addresses()
+    if drone_ingest.is_running():
+        path = drone_ingest.stream_path(name or "drone")
+        return {
+            "mode":         "server",
+            "listenSource": None,
+            "publishUrls":  [f"rtmp://{a}:{drone_ingest.RTMP_PORT}/{path}" for a in addrs],
+            "addresses":    addrs,
+            "port":         drone_ingest.RTMP_PORT,
+            "streamPath":   path,
+            "streamKey":    path.split("/", 1)[1],
+            "live":         path in drone_ingest.status()["live"],
+        }
     return {
+        "mode":         "listener",
         "listenSource": f"rtmp://0.0.0.0:{port}/live/{key}",
         "publishUrls":  [f"rtmp://{a}:{port}/live/{key}" for a in addrs],
         "addresses":    addrs,

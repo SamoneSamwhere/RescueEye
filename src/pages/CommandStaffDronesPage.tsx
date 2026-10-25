@@ -119,6 +119,10 @@ export function CommandStaffDronesPage() {
         onConnect={handleConnectFeed}
         connecting={addFeed.isPending}
         error={addFeed.error instanceof Error ? addFeed.error.message : null}
+        onViewLive={() => {
+          setConnectOpen(false)
+          navigate(ROUTES.commandStaffLiveMonitoring)
+        }}
       />
     </>
   )

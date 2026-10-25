@@ -11,6 +11,7 @@ Capped at MAX_FEEDS because each feed is a live FFmpeg transcode plus a
 detection loop in the browser — beyond four, a laptop running YOLO alongside
 them starts dropping frames, which is worse than refusing the fifth.
 """
+import functools
 import io
 import logging
 import os
@@ -87,11 +88,29 @@ def _normalise_listen_source(source: str) -> str:
 FEED_MAX_WIDTH = int(os.getenv("FEED_MAX_WIDTH", "1920"))
 
 
+@functools.lru_cache(maxsize=1)
+def _rtsp_timeout_flag() -> str:
+    """
+    The RTSP socket-timeout option this FFmpeg understands.
+
+    FFmpeg before 5.0 calls it -stimeout, and reads -timeout as "listen for an
+    incoming connection" - so on the 4.2 build imageio-ffmpeg ships, every RTSP
+    source failed at once with "Unable to open RTSP for listening". 5.0+
+    renamed it to -timeout and dropped -stimeout.
+    """
+    try:
+        out = subprocess.run([_ffmpeg_binary(), "-hide_banner", "-h", "demuxer=rtsp"],
+                             capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        return "-timeout"
+    return "-stimeout" if "-stimeout" in out else "-timeout"
+
+
 def _build_ffmpeg_cmd(source: str, fps: float) -> list[str]:
     """FFmpeg command with source-appropriate flags."""
     cmd = [_ffmpeg_binary(), "-loglevel", "error"]
     if source.startswith(("rtsp://", "rtsps://")):
-        cmd += ["-rtsp_transport", "tcp", "-timeout", "5000000"]
+        cmd += ["-rtsp_transport", "tcp", _rtsp_timeout_flag(), "5000000"]
     if _is_network_source(source):
         # Live sources are latency-critical: FFmpeg's defaults spend up to five
         # seconds probing the stream before emitting anything, then keep a
@@ -177,6 +196,9 @@ class Feed:
     producer: str = "none"          # 'ffmpeg' | 'synthetic' | 'none'
     proc: subprocess.Popen | None = None
     created_at: float = field(default_factory=time.time)
+    # Set for a feed opened automatically when a drone started publishing to
+    # the always-on ingest server (services/drone_ingest.py), e.g. "live/drone1".
+    ingest_path: str | None = None
 
     def snapshot(self) -> bytes | None:
         with self.lock:
@@ -225,6 +247,7 @@ class Feed:
             "producer":  self.producer,
             "hasFrame":  self.current_frame is not None,
             "createdAt": self.created_at,
+            "ingestPath": self.ingest_path,
         }
 
 
@@ -327,7 +350,8 @@ def _start_producer(feed: Feed) -> None:
     threading.Thread(target=target, args=(feed, fps), daemon=True).start()
 
 
-def add_feed(source: str, label: str | None = None, kind: str = "live") -> Feed:
+def add_feed(source: str, label: str | None = None, kind: str = "live",
+             ingest_path: str | None = None) -> Feed:
     """
     Registers and starts a new feed.
 
@@ -355,6 +379,7 @@ def add_feed(source: str, label: str | None = None, kind: str = "live") -> Feed:
             label=label or f"Feed {_counter}",
             source=source,
             kind=kind,
+            ingest_path=ingest_path,
         )
         _registry[feed_id] = feed
 

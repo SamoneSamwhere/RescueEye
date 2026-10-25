@@ -61,3 +61,7 @@ api/data/small_person.yaml
 api/models/*_results/
 api/models/candidates/
 api/models/placeholder_*
+
+# Drone ingest server binary (api/scripts/get_mediamtx.py) and its generated config
+api/bin/
+api/data/mediamtx.yml

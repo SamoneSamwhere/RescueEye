@@ -20,6 +20,7 @@ from routers import auth as auth_router
 from routers import review as review_router
 from routers.deps import SIGNED_IN
 from services import feed_registry
+from services import drone_ingest
 from services import telemetry_sources
 from services.yolo_model import load_all, model_info, model_status
 
@@ -51,9 +52,13 @@ async def lifespan(_app: FastAPI):
     logger.info("[startup] Starting stream producer ...")
     stream.startup()
 
+    # Always-on drone ingest: drones stream in whenever they go live.
+    drone_ingest.start()
+
     yield
 
     logger.info("[shutdown] Stopping stream producer ...")
+    drone_ingest.stop()
     stream.shutdown()
 
 

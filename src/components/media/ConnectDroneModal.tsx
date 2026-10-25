@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Check, Copy, Radio, Wifi } from 'lucide-react'
+import { Check, CircleDot, Copy, Radio, Wifi } from 'lucide-react'
+import QRCode from 'qrcode'
 import { Modal, Button } from '../ui'
 import { usePublishTarget } from '../../features/media/useFeeds'
 
@@ -9,9 +10,39 @@ export interface ConnectDroneModalProps {
   onConnect: (source: string, label: string) => void
   connecting: boolean
   error: string | null
+  /** Server mode: the drone is live, take the operator to its feed. */
+  onViewLive?: () => void
 }
 
 type Mode = 'push' | 'url'
+
+/** The drone app's address as a QR code, so the pilot scans it instead of typing it on a phone. */
+function AddressQr({ value }: { value: string }) {
+  const [src, setSrc] = useState<string | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    QRCode.toDataURL(value, { margin: 1, width: 176, errorCorrectionLevel: 'M' })
+      .then((url) => {
+        if (!cancelled) setSrc(url)
+      })
+      .catch(() => {
+        if (!cancelled) setSrc(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [value])
+  if (!src) return null
+  return (
+    <img
+      src={src}
+      alt={`QR code for ${value}`}
+      width={176}
+      height={176}
+      className="rounded-md border border-border bg-white p-1"
+    />
+  )
+}
 
 /**
  * Connects a live aircraft, by whichever direction its video travels.
@@ -19,9 +50,12 @@ type Mode = 'push' | 'url'
  * Two modes, because drones split cleanly in two. An IP camera or enterprise
  * airframe *serves* a stream and we fetch it — that is just a URL. Every
  * consumer DJI serves nothing: the phone app pushes outward to an address you
- * give it, so the API has to listen and the operator needs to be told what to
- * type into DJI Fly. Presenting only the URL box would leave the second group
- * with a field they cannot fill in.
+ * give it.
+ *
+ * With the always-on ingest (api/services/drone_ingest.py) that push needs no
+ * Connect step: each drone gets its own address, which DJI Fly remembers, and
+ * its feed opens on Live Monitoring by itself whenever it goes live. Without
+ * it the old flow remains — arm a listener here, then go live.
  */
 export function ConnectDroneModal({
   open,
@@ -29,17 +63,27 @@ export function ConnectDroneModal({
   onConnect,
   connecting,
   error,
+  onViewLive,
 }: ConnectDroneModalProps) {
   const [mode, setMode] = useState<Mode>('push')
   const [url, setUrl] = useState('')
   const [label, setLabel] = useState('')
+  const [droneName, setDroneName] = useState('')
   const [copied, setCopied] = useState<string | null>(null)
-  const target = usePublishTarget(open && mode === 'push')
+  // The address follows the name, but not on every keystroke.
+  const [debouncedName, setDebouncedName] = useState('')
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebouncedName(droneName.trim()), 300)
+    return () => window.clearTimeout(t)
+  }, [droneName])
+  const target = usePublishTarget(open && mode === 'push', debouncedName)
+  const serverMode = target.data?.mode === 'server'
 
   useEffect(() => {
     if (!open) {
       setUrl('')
       setLabel('')
+      setDroneName('')
       setCopied(null)
     }
   }, [open])
@@ -58,6 +102,30 @@ export function ConnectDroneModal({
 
   const publishUrls = target.data?.publishUrls ?? []
   const canConnect = mode === 'push' ? Boolean(target.data?.listenSource) : url.trim().length > 0
+  const live = serverMode && target.data?.live === true
+
+  const addressList =
+    publishUrls.length === 0 ? (
+      <p className="text-sm text-danger-fg">
+        No network address found — connect this computer to the same Wi-Fi as the phone.
+      </p>
+    ) : (
+      publishUrls.map((u) => (
+        <button
+          key={u}
+          type="button"
+          onClick={() => copy(u)}
+          className="flex items-center gap-2 rounded border border-border bg-surface px-2.5 py-1.5 text-left font-mono text-xs text-foreground hover:bg-surface-secondary"
+        >
+          <span className="flex-1 truncate">{u}</span>
+          {copied === u ? (
+            <Check className="size-3.5 shrink-0 text-success-fg" />
+          ) : (
+            <Copy className="size-3.5 shrink-0 text-foreground-muted" />
+          )}
+        </button>
+      ))
+    )
 
   return (
     <Modal open={open} onClose={connecting ? () => {} : onClose} title="Connect Drone">
@@ -97,80 +165,128 @@ export function ConnectDroneModal({
           </button>
         </div>
 
-        {mode === 'push' ? (
-          <div className="flex flex-col gap-2 rounded-md border border-border bg-surface-secondary p-3">
-            <p className="text-xs text-foreground-secondary">
-              In <strong>DJI Fly → Transmission → Live Streaming Platforms → RTMP</strong>, enter
-              this address, then press Connect here and start the stream.
-            </p>
-            {target.isLoading ? (
-              <p className="text-sm text-foreground-muted">Finding this computer's address…</p>
-            ) : publishUrls.length === 0 ? (
-              <p className="text-sm text-danger-fg">
-                No network address found — connect this computer to the same Wi-Fi as the phone.
-              </p>
-            ) : (
-              publishUrls.map((u) => (
-                <button
-                  key={u}
-                  type="button"
-                  onClick={() => copy(u)}
-                  className="flex items-center gap-2 rounded border border-border bg-surface px-2.5 py-1.5 text-left font-mono text-xs text-foreground hover:bg-surface-secondary"
-                >
-                  <span className="flex-1 truncate">{u}</span>
-                  {copied === u ? (
-                    <Check className="size-3.5 shrink-0 text-success-fg" />
-                  ) : (
-                    <Copy className="size-3.5 shrink-0 text-foreground-muted" />
-                  )}
-                </button>
-              ))
-            )}
+        {mode === 'push' && target.isLoading ? (
+          <p className="text-sm text-foreground-muted">Finding this computer's address…</p>
+        ) : mode === 'push' && serverMode ? (
+          <div className="flex flex-col gap-3">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-semibold uppercase tracking-wide text-foreground-secondary">
+                Drone name
+              </span>
+              <input
+                value={droneName}
+                onChange={(e) => setDroneName(e.target.value)}
+                placeholder="e.g. Neo 2 Alpha"
+                className="rounded-md border border-border bg-surface px-3 py-2 text-sm text-foreground"
+              />
+              <span className="text-xs text-foreground-muted">
+                Each drone gets its own address. Set it once — DJI Fly remembers it.
+              </span>
+            </label>
+
+            <div className="flex flex-col gap-3 rounded-md border border-border bg-surface-secondary p-3 sm:flex-row">
+              {publishUrls[0] ? <AddressQr value={publishUrls[0]} /> : null}
+              <div className="flex min-w-0 flex-1 flex-col gap-2">
+                <ol className="list-decimal space-y-1 pl-4 text-xs text-foreground-secondary">
+                  <li>
+                    Scan the code with the phone's camera and copy the address — or tap an address below to
+                    copy it.
+                  </li>
+                  <li>
+                    In <strong>DJI Fly → Transmission → Live Streaming Platforms → RTMP</strong>, paste it.
+                  </li>
+                  <li>
+                    Press <strong>Go Live</strong>. The feed opens on Live Monitoring by itself.
+                  </li>
+                </ol>
+                {addressList}
+              </div>
+            </div>
+
+            <div
+              className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm ${
+                live
+                  ? 'border-success-border bg-success-bg text-success-fg'
+                  : 'border-border bg-surface text-foreground-secondary'
+              }`}
+              role="status"
+            >
+              <CircleDot className={`size-4 shrink-0 ${live ? '' : 'animate-pulse text-foreground-muted'}`} />
+              {live ? 'This drone is live — its feed is on Live Monitoring.' : 'Waiting for this drone to go live…'}
+            </div>
+
             <p className="text-xs text-foreground-muted">
-              The phone must reach this computer — same Wi-Fi, and if the phone is joined to the
-              drone's own hotspot, use a controller so its Wi-Fi stays free.
+              The phone must reach this computer — same Wi-Fi, and if the phone is joined to the drone's own
+              hotspot, use a controller so its Wi-Fi stays free.
             </p>
+
+            <div className="flex items-center justify-end gap-2">
+              <Button variant="outline" onClick={onClose}>
+                Close
+              </Button>
+              {onViewLive ? (
+                <Button onClick={onViewLive} disabled={!live}>
+                  Open Live Monitoring
+                </Button>
+              ) : null}
+            </div>
           </div>
         ) : (
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-semibold uppercase tracking-wide text-foreground-secondary">
-              Stream URL
-            </span>
-            <input
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="rtsp://192.168.1.10:554/live"
-              className="rounded-md border border-border bg-surface px-3 py-2 font-mono text-sm text-foreground"
-            />
-          </label>
+          <>
+            {mode === 'push' ? (
+              <div className="flex flex-col gap-2 rounded-md border border-border bg-surface-secondary p-3">
+                <p className="text-xs text-foreground-secondary">
+                  In <strong>DJI Fly → Transmission → Live Streaming Platforms → RTMP</strong>, enter
+                  this address, then press Connect here and start the stream.
+                </p>
+                {addressList}
+                <p className="text-xs text-foreground-muted">
+                  The phone must reach this computer — same Wi-Fi, and if the phone is joined to the
+                  drone's own hotspot, use a controller so its Wi-Fi stays free.
+                </p>
+              </div>
+            ) : (
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs font-semibold uppercase tracking-wide text-foreground-secondary">
+                  Stream URL
+                </span>
+                <input
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  placeholder="rtsp://192.168.1.10:554/live"
+                  className="rounded-md border border-border bg-surface px-3 py-2 font-mono text-sm text-foreground"
+                />
+              </label>
+            )}
+
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-semibold uppercase tracking-wide text-foreground-secondary">
+                Feed name (optional)
+              </span>
+              <input
+                value={label}
+                onChange={(e) => setLabel(e.target.value)}
+                placeholder={mode === 'push' ? 'DJI Neo 2' : 'Live feed'}
+                className="rounded-md border border-border bg-surface px-3 py-2 text-sm text-foreground"
+              />
+            </label>
+
+            {error ? (
+              <p className="rounded-md border border-danger-border bg-danger-bg px-3 py-2 text-sm text-danger-fg">
+                {error}
+              </p>
+            ) : null}
+
+            <div className="flex items-center justify-end gap-2">
+              <Button variant="outline" onClick={onClose} disabled={connecting}>
+                Cancel
+              </Button>
+              <Button onClick={handleConnect} disabled={!canConnect || connecting}>
+                {connecting ? 'Connecting…' : 'Connect'}
+              </Button>
+            </div>
+          </>
         )}
-
-        <label className="flex flex-col gap-1.5">
-          <span className="text-xs font-semibold uppercase tracking-wide text-foreground-secondary">
-            Feed name (optional)
-          </span>
-          <input
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            placeholder={mode === 'push' ? 'DJI Neo 2' : 'Live feed'}
-            className="rounded-md border border-border bg-surface px-3 py-2 text-sm text-foreground"
-          />
-        </label>
-
-        {error ? (
-          <p className="rounded-md border border-danger-border bg-danger-bg px-3 py-2 text-sm text-danger-fg">
-            {error}
-          </p>
-        ) : null}
-
-        <div className="flex items-center justify-end gap-2">
-          <Button variant="outline" onClick={onClose} disabled={connecting}>
-            Cancel
-          </Button>
-          <Button onClick={handleConnect} disabled={!canConnect || connecting}>
-            {connecting ? 'Connecting…' : 'Connect'}
-          </Button>
-        </div>
       </div>
     </Modal>
   )

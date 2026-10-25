@@ -86,27 +86,36 @@ export function useMonitorMedia() {
 }
 
 export interface PublishTarget {
-  /** Wildcard bind to register as the feed source — the API receives the stream. */
-  listenSource: string
-  /** Routable addresses the pilot types into the drone app. */
+  /**
+   * "server": the always-on ingest (api/services/drone_ingest.py) is running —
+   * each drone has its own address and its feed opens by itself when it goes
+   * live. "listener": the fallback, one FFmpeg listener armed per connection.
+   */
+  mode: 'server' | 'listener'
+  /** Listener mode only: the wildcard bind to register as the feed source. */
+  listenSource: string | null
+  /** Routable addresses the pilot puts into the drone app. */
   publishUrls: string[]
   addresses: string[]
   port: number
   streamKey: string
+  /** Server mode: whether this drone is streaming right now. */
+  live?: boolean
 }
 
 /**
- * Where a push-only aircraft (any consumer DJI) should send its video.
- *
- * Fetched rather than built in the browser because the page only knows the
- * host it was served from, which is routinely localhost — useless to a phone.
+ * Where a drone app should push its stream. In server mode `droneName` picks
+ * the drone's own address, and the query polls so the screen can say the
+ * moment that drone goes live.
  */
-export function usePublishTarget(enabled = true) {
+export function usePublishTarget(enabled = true, droneName = '') {
   return useQuery({
-    queryKey: ['publish-target'],
-    queryFn: () => api.get<PublishTarget>('/stream/publish-target'),
+    queryKey: ['publish-target', droneName],
+    queryFn: () =>
+      api.get<PublishTarget>(`/stream/publish-target${droneName ? `?name=${encodeURIComponent(droneName)}` : ''}`),
     enabled,
     staleTime: 60_000,
+    refetchInterval: (query) => (query.state.data?.mode === 'server' ? 1500 : false),
   })
 }
 

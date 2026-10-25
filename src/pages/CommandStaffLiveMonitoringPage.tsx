@@ -17,7 +17,9 @@ export function CommandStaffLiveMonitoringPage() {
   const toast = useToast()
   const [detectEnabled, setDetectEnabled] = useState(true)
 
-  const feedsQuery = useFeeds()
+  // A drone that goes live opens its feed by itself (api/services/drone_ingest.py); poll
+  // often enough that its panel appears within a couple of seconds of Go Live.
+  const feedsQuery = useFeeds(1500)
   const closeFeed = useCloseFeed()
 
   // Live drone feeds only. Uploaded clips play in their own section on Drones
