@@ -16,8 +16,9 @@ import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from routers.deps import websocket_user
 from routers.responders import position_payload, record_device_fix
-from services import live_hub, mission_store, responder_registry
+from services import auth, live_hub, mission_store, responder_registry
 
 logger = logging.getLogger("rescueeye.live")
 router = APIRouter()
@@ -25,22 +26,28 @@ router = APIRouter()
 
 @router.websocket("/ws")
 async def live_updates(ws: WebSocket) -> None:
+    # Browsers cannot set headers on a WebSocket, so the token rides in ?token=.
+    user = websocket_user(ws)
+    if user is None:
+        await ws.close(code=4401, reason="sign in required")
+        return
+    await mission_store.load_agency(user.agency_id)
     snapshot = {
-        "responders": [position_payload(p) for p in responder_registry.active() if p.source == "device"],
-        "missions": mission_store.all_missions(),
+        "responders": [position_payload(p) for p in responder_registry.active(user.agency_id) if p.source == "device"],
+        "missions": mission_store.all_missions(user.agency_id),
     }
-    await live_hub.connect(ws, snapshot)
+    await live_hub.connect(ws, snapshot, user.agency_id)
     try:
         # Reading also keeps the connection open and is how a closed tab is noticed.
         while True:
-            await _handle_client_message(await ws.receive_text())
+            await _handle_client_message(await ws.receive_text(), user)
     except WebSocketDisconnect:
         pass
     finally:
         await live_hub.disconnect(ws)
 
 
-async def _handle_client_message(text: str) -> None:
+async def _handle_client_message(text: str, user: auth.Principal) -> None:
     """A bad message is logged and dropped; it must not close the socket."""
     try:
         message = json.loads(text)
@@ -50,6 +57,6 @@ async def _handle_client_message(text: str) -> None:
     if not isinstance(message, dict) or message.get("type") != "location":
         return
     try:
-        await record_device_fix(message.get("responderId"), message)
-    except ValueError as exc:
+        await record_device_fix(message.get("responderId"), message, user)
+    except (ValueError, PermissionError) as exc:
         logger.debug(f"[live] ignored bad location: {exc}")

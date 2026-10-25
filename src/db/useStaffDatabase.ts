@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { supabase, emailPattern, handleDatabaseError } from '../lib/supabase'
-import { hashPassword } from './useAgencyDatabase'
+import { supabase } from '../lib/supabase'
+import { api, ApiError, apiErrorText } from '../lib/apiClient'
 
 export type StaffRole = 'COMMAND_STAFF' | 'FIELD_RESPONDER'
 
@@ -56,44 +56,24 @@ export function useStaffDatabase() {
   const createStaffUser = async (input: CreateStaffInput): Promise<CreateStaffResult> => {
     setIsLoading(true)
     try {
-      // A failed lookup used to be ignored — the insert then went ahead with
-      // no duplicate check at all. Login matches email case-insensitively, so
-      // the check must too, or two case-variants of one address could exist.
-      const { data: existing, error: lookupError } = await supabase
-        .from('user')
-        .select('id')
-        .ilike('email', emailPattern(input.email))
-        .limit(1)
-      if (lookupError) throw lookupError
-      if (existing && existing.length > 0) {
-        return { ok: false, error: 'A user with this email address already exists.', field: 'email' }
-      }
-
-      const passwordHash = await hashPassword(input.password)
-      const { data, error: dbError } = await supabase
-        .from('user')
-        .insert([
-          {
-            email: input.email.trim(),
-            passwordHash,
-            firstName: input.firstName.trim(),
-            lastName: input.lastName.trim(),
-            phone: input.phone?.trim() || null,
-            role: input.role,
-            agencyId: input.agencyId,
-            active: true,
-            createdAt: new Date().toISOString(),
-          },
-        ])
-        .select('id')
-        .single()
-
-      if (dbError || !data) throw dbError || new Error('Failed to create user')
-      return { ok: true, userId: data.id }
+      // The API hashes the password and always uses the admin's own agency
+      // (api/routers/auth.py, POST /auth/users); input.agencyId is not sent.
+      const res = await api.post<{ userId: number }>('/auth/users', {
+        firstName: input.firstName.trim(),
+        lastName: input.lastName.trim(),
+        email: input.email.trim(),
+        phone: input.phone?.trim() || null,
+        password: input.password,
+        role: input.role,
+      })
+      return { ok: true, userId: res.userId }
     } catch (err) {
       console.error('Create staff user error:', err)
-      const errorMessage = handleDatabaseError(err)
-      return { ok: false, error: errorMessage, field: /email/i.test(errorMessage) ? 'email' : undefined }
+      return {
+        ok: false,
+        error: apiErrorText(err),
+        field: err instanceof ApiError && err.status === 409 ? 'email' : undefined,
+      }
     } finally {
       setIsLoading(false)
     }

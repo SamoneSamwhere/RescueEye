@@ -8,6 +8,8 @@ enforced rather than silently evicting, and removal frees a slot.
 import pytest
 from fastapi.testclient import TestClient
 
+from auth_helpers import AUTH_HEADERS
+
 from main import app
 from services import feed_registry as registry
 
@@ -19,7 +21,7 @@ def client():
     # Start from an empty registry so tests don't inherit the feed opened at
     # application startup.
     registry.shutdown_all()
-    with TestClient(app) as c:
+    with TestClient(app, headers=AUTH_HEADERS) as c:
         yield c
     registry.shutdown_all()
 

@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { API_BASE_URL } from '../lib/apiClient'
+import { notifySessionExpired, withToken } from '../lib/sessionToken'
 import { useAuth } from '../features/auth'
 import { useQueryClient } from '@tanstack/react-query'
 import { useMissionStore } from './MissionStore'
@@ -44,6 +45,8 @@ interface LiveUpdatesContextValue {
 const LiveUpdatesContext = createContext<LiveUpdatesContextValue | undefined>(undefined)
 
 const LIVE_URL = `${API_BASE_URL.replace(/^http/, 'ws')}/live/ws`
+/** Close code the API uses for a missing or rejected token (routers/live.py). */
+const UNAUTHORIZED_CLOSE = 4401
 const MAX_RETRY_DELAY_MS = 10_000
 
 /**
@@ -92,7 +95,8 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
     }
 
     function open() {
-      socket = new WebSocket(LIVE_URL)
+      // Browsers can't put a header on a WebSocket, so the token goes in the URL.
+      socket = new WebSocket(withToken(LIVE_URL))
       socketRef.current = socket
       socket.onopen = () => {
         attempt = 0
@@ -105,9 +109,13 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
           // A malformed message is dropped; the next one is independent of it.
         }
       }
-      socket.onclose = () => {
+      socket.onclose = (event) => {
         setConnected(false)
         if (stopped) return
+        if (event.code === UNAUTHORIZED_CLOSE) {
+          notifySessionExpired()
+          return
+        }
         retryTimer = setTimeout(open, Math.min(MAX_RETRY_DELAY_MS, 1000 * 2 ** attempt++))
       }
       socket.onerror = () => socket?.close()
@@ -121,7 +129,8 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
       socketRef.current = null
       setConnected(false)
     }
-  }, [enabled, queryClient])
+    // Reconnect as whoever is now signed in.
+  }, [enabled, session?.id, queryClient])
 
   function send(message: OutgoingLocationMessage): boolean {
     const socket = socketRef.current

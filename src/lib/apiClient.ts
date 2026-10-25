@@ -7,6 +7,8 @@
  * turning a non-2xx into a useful Error.
  */
 
+import { getApiToken, notifySessionExpired } from './sessionToken'
+
 /** Base URL of the Python API. Override with VITE_API_BASE_URL in .env. */
 export const API_BASE_URL: string =
   import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') ?? 'http://127.0.0.1:8000'
@@ -38,15 +40,25 @@ export function apiUrl(path: string): string {
   return `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`
 }
 
+/** The signed-in user's token on a request (see lib/sessionToken.ts). */
+function authHeaders(headers?: HeadersInit): Headers {
+  const result = new Headers(headers)
+  const token = getApiToken()
+  if (token && !result.has('Authorization')) result.set('Authorization', `Bearer ${token}`)
+  return result
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response
   try {
-    response = await fetch(apiUrl(path), init)
+    response = await fetch(apiUrl(path), { ...init, headers: authHeaders(init?.headers) })
   } catch {
     // fetch only rejects on network-level failure, which for this app almost
     // always means the Python service isn't running.
     throw new ApiError(`Cannot reach the detection API at ${API_BASE_URL}. Check that it is running, and that this page’s origin (${window.location.origin}) is in the API’s ALLOWED_ORIGINS.`, 0)
   }
+  // A rejected token on anything but sign-in itself means the session is over.
+  if (response.status === 401 && !path.startsWith('/auth/')) notifySessionExpired()
   if (!response.ok) throw await toApiError(response)
   if (response.status === 204) return undefined as T
   return (await response.json()) as T
@@ -82,6 +94,8 @@ export function uploadWithProgress<T>(
   const xhr = new XMLHttpRequest()
   const promise = new Promise<T>((resolve, reject) => {
     xhr.open('POST', apiUrl(path))
+    const token = getApiToken()
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
     xhr.upload.addEventListener('progress', (event) => {
       if (event.lengthComputable && onProgress) {
         onProgress(Math.round((event.loaded / event.total) * 100))
@@ -112,4 +126,14 @@ export function uploadWithProgress<T>(
     xhr.send(formData)
   })
   return { promise, abort: () => xhr.abort() }
+}
+
+/** An API failure as a sentence a user can act on. */
+export function apiErrorText(err: unknown): string {
+  if (err instanceof ApiError) {
+    if (err.status === 0) return "Can't reach the RescueEye server. Check your internet connection and try again."
+    if (err.status >= 500) return 'The server could not complete this request. Please try again.'
+    return err.message
+  }
+  return 'Something went wrong. Please try again.'
 }

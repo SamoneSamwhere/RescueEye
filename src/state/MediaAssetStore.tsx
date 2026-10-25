@@ -1,6 +1,7 @@
 import { createContext, useContext, useState } from 'react'
 import type { ReactNode } from 'react'
 import { mockMediaAssets } from '../data/mockMediaAssets'
+import { demoSeed } from '../lib/demoMode'
 import type { MediaAsset } from '../types/media'
 
 interface MediaAssetStoreContextValue {
@@ -19,7 +20,7 @@ const MediaAssetStoreContext = createContext<MediaAssetStoreContextValue | undef
  * switch), silently orphaning any detection created since the last mount.
  */
 export function MediaAssetStoreProvider({ children }: { children: ReactNode }) {
-  const [mediaAssets, setMediaAssets] = useState<MediaAsset[]>(mockMediaAssets)
+  const [mediaAssets, setMediaAssets] = useState<MediaAsset[]>(() => demoSeed(mockMediaAssets))
 
   function addMediaAsset(asset: MediaAsset) {
     setMediaAssets((prev) => [asset, ...prev])

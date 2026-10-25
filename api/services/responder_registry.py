@@ -47,6 +47,7 @@ class ResponderPosition:
     name: str = ""
     source: str = "console"  # "device" (phone GPS) or "console" (roster)
     updated_at: float = 0.0  # time.time(), for clients that show when it was taken
+    agency_id: str | None = None  # whose responder this is; live updates stay within it
 
 
 _positions: dict[str, ResponderPosition] = {}
@@ -63,7 +64,7 @@ def haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
 
 
 def report(responder_id: str, lat: float, lng: float, name: str = "",
-           source: str = "console") -> ResponderPosition | None:
+           source: str = "console", agency_id: str | None = None) -> ResponderPosition | None:
     """
     Records or refreshes one responder's position.
 
@@ -80,19 +81,21 @@ def report(responder_id: str, lat: float, lng: float, name: str = "",
             responder_id=responder_id, lat=lat, lng=lng,
             reported_at=now, name=name or (current.name if current else ""),
             source=source, updated_at=time.time(),
+            agency_id=agency_id if agency_id is not None else (current.agency_id if current else None),
         )
         _positions[responder_id] = position
         return position
 
 
-def active() -> list[ResponderPosition]:
-    """Positions still within the TTL, expiring stale ones as it goes."""
+def active(agency_id: str | None = None) -> list[ResponderPosition]:
+    """Positions still within the TTL (of one agency, if given), expiring stale ones as it goes."""
     now = time.monotonic()
     with _lock:
         fresh = {k: v for k, v in _positions.items() if now - v.reported_at <= RESPONDER_TTL_S}
         _positions.clear()
         _positions.update(fresh)
-        return list(fresh.values())
+        values = list(fresh.values())
+    return values if agency_id is None else [p for p in values if p.agency_id == str(agency_id)]
 
 
 def nearest(lat: float | None, lng: float | None) -> tuple[ResponderPosition | None, float]:
@@ -122,7 +125,11 @@ def is_known_responder(lat: float | None, lng: float | None,
     return True, (pos.name or pos.responder_id)
 
 
-def reset() -> None:
-    """Clears all positions — test hook, and used when a feed restarts."""
+def reset(agency_id: str | None = None) -> None:
+    """Clears all positions (or one agency's) — test hook, and used when an operation ends."""
     with _lock:
-        _positions.clear()
+        if agency_id is None:
+            _positions.clear()
+        else:
+            for key in [k for k, v in _positions.items() if v.agency_id == str(agency_id)]:
+                del _positions[key]

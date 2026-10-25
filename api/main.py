@@ -16,6 +16,9 @@ from routers import responders as responders_router
 from routers import missions as missions_router
 from routers import live as live_router
 from routers import alerts as alerts_router
+from routers import auth as auth_router
+from routers import review as review_router
+from routers.deps import SIGNED_IN
 from services import feed_registry
 from services import telemetry_sources
 from services.yolo_model import load_all, model_info, model_status
@@ -91,18 +94,20 @@ app.add_middleware(
 )
 logger.info(f"[startup] CORS allowed origins: {', '.join(allowed_origins)}")
 
-app.include_router(detect.router,         prefix="/detect",     tags=["detection"])
-app.include_router(classify.router,       prefix="/classify",   tags=["classification"])
-app.include_router(stream.router,         prefix="/stream",     tags=["stream"])
-app.include_router(detections.router,     prefix="/detections", tags=["detections"])
-app.include_router(models_router.router,  prefix="/models",     tags=["models"])
-app.include_router(logs_router.router,    prefix="/logs",       tags=["logs"])
-app.include_router(drone_router.router,   prefix="/drone",      tags=["drone"])
-app.include_router(media_router.router,   prefix="/media",      tags=["media"])
-app.include_router(responders_router.router, prefix="/responders", tags=["responders"])
-app.include_router(missions_router.router,  prefix="/missions",   tags=["missions"])
+app.include_router(detect.router,         prefix="/detect",     tags=["detection"], dependencies=[SIGNED_IN])
+app.include_router(classify.router,       prefix="/classify",   tags=["classification"], dependencies=[SIGNED_IN])
+app.include_router(stream.router,         prefix="/stream",     tags=["stream"], dependencies=[SIGNED_IN])
+app.include_router(detections.router,     prefix="/detections", tags=["detections"], dependencies=[SIGNED_IN])
+app.include_router(models_router.router,  prefix="/models",     tags=["models"], dependencies=[SIGNED_IN])
+app.include_router(logs_router.router,    prefix="/logs",       tags=["logs"], dependencies=[SIGNED_IN])
+app.include_router(drone_router.router,   prefix="/drone",      tags=["drone"])  # guarded per endpoint: telemetry also accepts a device key
+app.include_router(media_router.router,   prefix="/media",      tags=["media"], dependencies=[SIGNED_IN])
+app.include_router(responders_router.router, prefix="/responders", tags=["responders"], dependencies=[SIGNED_IN])
+app.include_router(missions_router.router,  prefix="/missions",   tags=["missions"], dependencies=[SIGNED_IN])
 app.include_router(live_router.router,      prefix="/live",       tags=["live"])
-app.include_router(alerts_router.router,    prefix="/alerts",     tags=["alerts"])
+app.include_router(auth_router.router,      prefix="/auth",       tags=["auth"])
+app.include_router(review_router.router,    prefix="/review",     tags=["review"], dependencies=[SIGNED_IN])
+app.include_router(alerts_router.router,    prefix="/alerts",     tags=["alerts"], dependencies=[SIGNED_IN])
 
 
 @app.get("/health", tags=["system"])

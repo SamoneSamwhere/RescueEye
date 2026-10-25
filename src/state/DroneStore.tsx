@@ -1,6 +1,7 @@
 import { createContext, useContext, useState } from 'react'
 import type { ReactNode } from 'react'
 import { mockDrones } from '../data/mockDrones'
+import { demoSeed } from '../lib/demoMode'
 import type { Drone } from '../types/drone'
 
 interface DroneStoreContextValue {
@@ -22,7 +23,7 @@ const DroneStoreContext = createContext<DroneStoreContextValue | undefined>(unde
  * reset the moment the user navigated away from it.
  */
 export function DroneStoreProvider({ children }: { children: ReactNode }) {
-  const [drones, setDrones] = useState<Drone[]>(mockDrones)
+  const [drones, setDrones] = useState<Drone[]>(() => demoSeed(mockDrones))
   const [liveDroneIds, setLiveDroneIds] = useState<string[]>([])
 
   function addDrone(drone: Drone) {

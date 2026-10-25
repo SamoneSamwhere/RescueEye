@@ -16,12 +16,14 @@ reads GLOBAL_POSITION_INT directly.
 """
 import time
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from services import telemetry_sources
 from services.drone_telemetry import current_state, is_simulated
 from services.telemetry_sources import STALE_AFTER_S, TelemetryFix
+
+from routers.deps import current_user, signed_in_or_device
 
 router = APIRouter()
 
@@ -64,7 +66,7 @@ class TelemetryIn(BaseModel):
     )
 
 
-@router.get("/telemetry", response_model=DroneTelemetry)
+@router.get("/telemetry", response_model=DroneTelemetry, dependencies=[Depends(current_user)])
 async def get_telemetry(droneId: str | None = None) -> DroneTelemetry:
     """
     Current position of the feed drone.
@@ -87,7 +89,7 @@ async def get_telemetry(droneId: str | None = None) -> DroneTelemetry:
     )
 
 
-@router.post("/telemetry", status_code=202)
+@router.post("/telemetry", status_code=202, dependencies=[Depends(signed_in_or_device)])
 async def push_telemetry(payload: TelemetryIn):
     """
     Accept a fix from any drone platform.
@@ -112,7 +114,7 @@ async def push_telemetry(payload: TelemetryIn):
     return {"ok": True, "droneId": payload.droneId, "staleAfterSeconds": STALE_AFTER_S}
 
 
-@router.get("/sources")
+@router.get("/sources", dependencies=[Depends(current_user)])
 async def telemetry_sources_status():
     """
     Which telemetry paths exist and whether anything real is currently live.

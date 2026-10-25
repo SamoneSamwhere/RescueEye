@@ -59,6 +59,10 @@ class AlertError(ValueError):
     """A dispatch or update the caller asked for that is not allowed."""
 
 
+class AlertForbidden(Exception):
+    """The caller may not act on this alert or incident."""
+
+
 class AlertNotFound(LookupError):
     pass
 
@@ -136,8 +140,22 @@ async def _audit(alert_id: int, field: str, old: str | None, new: str | None, ac
         logger.exception(f"[alerts] audit write failed for alert {alert_id}")
 
 
+# incident id -> agency id, so a live alert update reaches only that agency's screens.
+_incident_agency: dict[int, str] = {}
+
+
+async def incident_agency(incident_id: int) -> str | None:
+    if incident_id not in _incident_agency:
+        rows = await supabase_db.select("incident", id=incident_id)
+        if not rows:
+            return None
+        _incident_agency[incident_id] = str(rows[0]["agencyId"])
+    return _incident_agency[incident_id]
+
+
 async def _publish(alert: dict) -> None:
-    await live_hub.broadcast({"type": "alert", "alert": to_client(alert)})
+    agency = await incident_agency(alert["incidentId"])
+    await live_hub.broadcast({"type": "alert", "alert": to_client(alert)}, agency)
 
 
 async def set_status(alert: dict, new_status: str, actor_id: int, *, acknowledge: bool = False) -> dict:
@@ -218,12 +236,19 @@ async def _deliver_push(alert: dict, token: str | None, actor_id: int) -> dict:
 
 # ── Public operations ────────────────────────────────────────────────────────
 
-async def dispatch(incident_id: int, recipient_ids: list[int], dispatched_by: int, label: str | None = None) -> list[dict]:
-    """Records the assignment and sends SMS, PUSH and DASHBOARD alerts to every recipient."""
+async def dispatch(incident_id: int, recipient_ids: list[int], dispatched_by: int, label: str | None = None,
+                   *, agency_id: str | None = None) -> list[dict]:
+    """
+    Records the assignment and sends SMS, PUSH and DASHBOARD alerts to every recipient.
+    `agency_id` is the dispatcher's agency; the incident must belong to it.
+    """
     incidents = await supabase_db.select("incident", id=incident_id)
     if not incidents:
         raise AlertNotFound(f"incident {incident_id} not found - only verified incidents can be dispatched")
     incident = incidents[0]
+    if agency_id is not None and str(incident["agencyId"]) != str(agency_id):
+        raise AlertForbidden(f"incident {incident_id} belongs to another agency")
+    _incident_agency[incident_id] = str(incident["agencyId"])
     if incident["status"] == "RESOLVED":
         raise AlertError(f"incident {incident_id} is resolved")
 

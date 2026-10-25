@@ -1,6 +1,7 @@
 import { createContext, useContext, useState } from 'react'
 import type { ReactNode } from 'react'
 import { mockUsers } from '../data/mockUsers'
+import { demoSeed } from '../lib/demoMode'
 import type { MockUser } from '../data/mockUsers'
 
 interface UserStoreContextValue {
@@ -19,7 +20,7 @@ const UserStoreContext = createContext<UserStoreContextValue | undefined>(undefi
  * against this same live list rather than the static mockUsers import.
  */
 export function UserStoreProvider({ children }: { children: ReactNode }) {
-  const [users, setUsers] = useState<MockUser[]>(mockUsers)
+  const [users, setUsers] = useState<MockUser[]>(() => demoSeed(mockUsers))
 
   function addUser(user: MockUser) {
     setUsers((prev) => [...prev, user])

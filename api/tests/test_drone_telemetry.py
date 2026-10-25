@@ -12,6 +12,8 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
+from auth_helpers import AUTH_HEADERS
+
 from main import app
 from services.detection_store import CEBU_LAT, CEBU_LNG
 from services import drone_telemetry
@@ -82,7 +84,7 @@ class TestFlightPath:
 
 class TestTelemetryEndpoint:
     def test_returns_current_position(self):
-        client = TestClient(app)
+        client = TestClient(app, headers=AUTH_HEADERS)
         res = client.get("/drone/telemetry")
         assert res.status_code == 200
         body = res.json()
@@ -93,11 +95,11 @@ class TestTelemetryEndpoint:
 
     def test_declares_itself_simulated(self):
         """The UI must be able to label this rather than imply a real GPS fix."""
-        client = TestClient(app)
+        client = TestClient(app, headers=AUTH_HEADERS)
         assert client.get("/drone/telemetry").json()["simulated"] is True
 
     def test_successive_reads_track_smoothly(self):
-        client = TestClient(app)
+        client = TestClient(app, headers=AUTH_HEADERS)
         first = client.get("/drone/telemetry").json()
         time.sleep(0.15)
         second = client.get("/drone/telemetry").json()

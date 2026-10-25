@@ -17,6 +17,7 @@
 import { useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api, apiUrl } from '../../lib/apiClient'
+import { withToken } from '../../lib/sessionToken'
 import { distanceKm } from '../../lib/geo'
 import type {
   BoundingBox,
@@ -52,7 +53,7 @@ export interface ApiDetection {
 }
 
 /** JPEG crop of the subject, served straight from the API. */
-export const detectionSnapshotUrl = (apiId: string) => apiUrl(`/detections/${apiId}/snapshot`)
+export const detectionSnapshotUrl = (apiId: string) => withToken(apiUrl(`/detections/${apiId}/snapshot`))
 
 interface RecentResponse {
   detections: ApiDetection[]

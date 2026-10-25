@@ -11,6 +11,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from auth_helpers import AUTH_HEADERS
+
 from routers import responders
 from services import responder_registry
 
@@ -28,7 +30,7 @@ def client():
     responder_registry.reset()
     app = FastAPI()
     app.include_router(responders.router, prefix="/responders")
-    yield TestClient(app)
+    yield TestClient(app, headers=AUTH_HEADERS)
     responder_registry.reset()
 
 

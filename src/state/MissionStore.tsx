@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { mockMissions } from '../data/mockMissions'
+import { demoSeed } from '../lib/demoMode'
 import { api } from '../lib/apiClient'
 import type { Mission } from '../types/mission'
 
@@ -36,7 +37,7 @@ function writeBack(mission: Mission) {
  * through applyRemoteMission.
  */
 export function MissionStoreProvider({ children }: { children: ReactNode }) {
-  const [missions, setMissions] = useState<Mission[]>(mockMissions)
+  const [missions, setMissions] = useState<Mission[]>(() => demoSeed(mockMissions))
   // updateMission needs the full mission to write back, not just the patch.
   const missionsRef = useRef(missions)
   useEffect(() => {

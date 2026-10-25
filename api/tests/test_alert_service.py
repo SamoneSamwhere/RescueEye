@@ -78,7 +78,7 @@ def env(monkeypatch):
     monkeypatch.setattr(supabase_db, "insert", db.insert)
     monkeypatch.setattr(supabase_db, "update", db.update)
 
-    async def broadcast(message):
+    async def broadcast(message, agency_id=None):
         broadcasts.append(message)
 
     monkeypatch.setattr(live_hub, "broadcast", broadcast)

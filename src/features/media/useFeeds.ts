@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, apiUrl, ApiError } from '../../lib/apiClient'
+import { withToken } from '../../lib/sessionToken'
 import type { StoredMedia } from '../../types/media'
 import type { SceneDamage } from '../../types/detection'
 
@@ -131,8 +132,8 @@ export function useCloseFeed() {
   })
 }
 
-export const feedMjpegUrl = (feedId: string) => apiUrl(`/stream/feeds/${feedId}/mjpeg`)
-export const feedSnapshotUrl = (feedId: string) => apiUrl(`/stream/feeds/${feedId}/snapshot`)
+export const feedMjpegUrl = (feedId: string) => withToken(apiUrl(`/stream/feeds/${feedId}/mjpeg`))
+export const feedSnapshotUrl = (feedId: string) => withToken(apiUrl(`/stream/feeds/${feedId}/snapshot`))
 
 /** Adds a stored clip to the library list without a refetch round-trip. */
 export const mediaLabel = (media: StoredMedia) => media.original_name

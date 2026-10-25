@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { hashPassword } from './useAgencyDatabase'
+import { api, apiErrorText } from '../lib/apiClient'
 
 export interface DbProfileUser {
   id: number
@@ -49,25 +49,17 @@ export function useProfileDatabase() {
   }
 
   const changePassword = async (
-    userId: number,
+    _userId: number,
     currentPassword: string,
     newPassword: string,
   ): Promise<ChangePasswordResult> => {
     setIsLoading(true)
     try {
-      const { data, error } = await supabase.from('user').select('passwordHash').eq('id', userId).single()
-      if (error || !data) return { ok: false, error: 'Unable to verify current password.' }
-
-      const currentHash = await hashPassword(currentPassword)
-      if (currentHash !== data.passwordHash) {
-        return { ok: false, error: 'Current password is incorrect' }
-      }
-
-      const newHash = await hashPassword(newPassword)
-      const { error: updateError } = await supabase.from('user').update({ passwordHash: newHash }).eq('id', userId)
-      if (updateError) return { ok: false, error: 'Failed to update password' }
-
+      // The signed-in user is taken from the session token, not the id passed in.
+      await api.post('/auth/password', { currentPassword, newPassword })
       return { ok: true }
+    } catch (err) {
+      return { ok: false, error: apiErrorText(err) }
     } finally {
       setIsLoading(false)
     }

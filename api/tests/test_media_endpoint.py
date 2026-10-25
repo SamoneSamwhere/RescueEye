@@ -11,6 +11,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from auth_helpers import AUTH_HEADERS
+
 from routers import media as media_router
 from services import media_store
 
@@ -26,7 +28,7 @@ def client(tmp_path, monkeypatch):
                         lambda v, t, dest: (dest.write_bytes(b"jpgbytes"), True)[1])
     app = FastAPI()
     app.include_router(media_router.router, prefix="/media")
-    return TestClient(app)
+    return TestClient(app, headers=AUTH_HEADERS)
 
 
 def _upload(client, name="clip.mp4", data=b"0123456789" * 100, **form):

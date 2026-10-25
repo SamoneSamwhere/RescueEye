@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { getDatabaseToken } from './sessionToken'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -7,7 +8,16 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables')
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+/**
+ * Database requests carry the signed-in user's token once the API issues one
+ * signed with Supabase's secret, so row-level security
+ * (supabase/migrations/07_security_rls.sql) knows who is asking. Until then -
+ * and when signed out - it falls back to the anon key. Supabase Auth is not
+ * used: sign-in belongs to the API.
+ */
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  accessToken: async () => getDatabaseToken(),
+})
 
 /** The fields every Supabase/PostgREST error carries. */
 interface DbErrorLike {

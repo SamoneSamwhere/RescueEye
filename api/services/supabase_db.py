@@ -66,3 +66,22 @@ async def insert(table: str, rows: dict | list[dict]) -> list[dict]:
 async def update(table: str, row_id: int, patch: dict) -> dict | None:
     rows = await _request("PATCH", table, params={"id": f"eq.{row_id}"}, json=patch, prefer="return=representation")
     return rows[0] if rows else None
+
+
+async def select_raw(table: str, params: dict[str, Any]) -> list[dict]:
+    """A GET with PostgREST query params as given, for filters `select` can't express (ilike, or, ...)."""
+    return await _request("GET", table, params=params)
+
+
+async def delete(table: str, row_id: int) -> None:
+    await _request("DELETE", table, params={"id": f"eq.{row_id}"})
+
+
+def postgrest_escape_like(value: str) -> str:
+    """A literal for a PostgREST `ilike` filter: `*` is its wildcard, `%`/`_` are Postgres's."""
+    return value.replace("\\", "\\\\").replace("%", "\%").replace("_", "\_").replace("*", "\*")
+
+
+async def upsert(table: str, rows: dict | list[dict]) -> list[dict]:
+    """Insert, or replace the row with the same primary key."""
+    return await _request("POST", table, json=rows, prefer="resolution=merge-duplicates,return=representation")

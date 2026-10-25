@@ -129,6 +129,34 @@ registered Expo push token on the responder's `user` row every PUSH alert is.
 The in-app alert is sent either way. Alerts go only to accounts in the database —
 the built-in demo logins have no `user` row.
 
+### Sign-in and security
+
+Sign-in runs on the API, not in the browser ([api/services/auth.py](api/services/auth.py)).
+The API checks the password (bcrypt; old SHA-256 hashes are upgraded on the
+next sign-in) and returns a signed session token. The web app sends it with
+every API call, on media URLs and the live WebSocket, and to Supabase, where
+row-level security uses it ([07_security_rls.sql](supabase/migrations/07_security_rls.sql)).
+
+- Every API endpoint except `/auth/login`, `/auth/register`, `/auth/demo` and
+  `/health` requires a token. Only Command Staff dispatch; a responder reports
+  only their own location and sees only their own alerts; live updates stay
+  within the agency.
+- `api/.env` needs `SUPABASE_SERVICE_ROLE_KEY` (the real service_role key) and
+  `SUPABASE_JWT_SECRET` (Project Settings > JWT Keys > Legacy JWT secret) **before**
+  migration 07 is run. Without the JWT secret, everyone must sign in again
+  after each API restart.
+- Reset any account's password from the server:
+  `cd api && .venv/Scripts/python.exe -m scripts.admin.set_password someone@agency.org`
+- `POST /drone/telemetry` also accepts `X-Device-Key: <DRONE_INGEST_KEY>` for drone bridges.
+
+### Demo mode
+
+`VITE_DEMO_MODE=true` (web, `.env`) and `DEMO_MODE=true` (API, `api/.env`) turn
+on the built-in demo accounts and the mock incidents, detections and drones,
+for presentations. **Leave both off for a real deployment** such as an LDRRMO
+pilot: demo passwords are published in this README, and mock incidents would
+sit beside real ones. The Android app is always built without demo mode.
+
 ### Database migrations
 
 Run each file in [supabase/migrations/](supabase/migrations/) **in order** in the
@@ -168,12 +196,13 @@ only replaces one in `api/models/` after it beats it on the evaluation script.
 
 ## Demo accounts
 
-All use password `password123`. Demo accounts are local mock logins — they cannot
-register drones or add personnel, and nothing they create is saved.
+Only with demo mode on (see above). All use password `password123`. Demo
+accounts are local mock logins — they cannot register drones or add personnel,
+and nothing they create is saved.
 
 | Role | Email |
 |---|---|
-| System Admin | admin@rescueeye.io (needs the seeded Supabase database) |
+| System Admin | admin@rescueeye.io (demo mode; the real System Admin account of the same email needs its password set with `set_password`) |
 | Agency Admin | agencyadmin@rescueeye.io |
 | Command Staff | commandstaff@rescueeye.io |
 | Field Responder | responder@rescueeye.io |

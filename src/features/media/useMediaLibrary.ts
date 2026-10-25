@@ -8,6 +8,7 @@
 import { useCallback, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, apiUrl, uploadWithProgress } from '../../lib/apiClient'
+import { withToken } from '../../lib/sessionToken'
 import type { MediaLibraryStats, StoredFrame, StoredMedia } from '../../types/media'
 
 const MEDIA_KEY = 'media'
@@ -110,7 +111,7 @@ export function useDeleteMedia() {
  * the API origin rather than fetched through the client.
  */
 
-export const mediaFileUrl = (mediaId: string) => apiUrl(`/media/${mediaId}/file`)
-export const mediaThumbnailUrl = (mediaId: string) => apiUrl(`/media/${mediaId}/thumbnail`)
+export const mediaFileUrl = (mediaId: string) => withToken(apiUrl(`/media/${mediaId}/file`))
+export const mediaThumbnailUrl = (mediaId: string) => withToken(apiUrl(`/media/${mediaId}/thumbnail`))
 export const mediaFrameUrl = (mediaId: string, frameId: string) =>
-  apiUrl(`/media/${mediaId}/frames/${frameId}`)
+  withToken(apiUrl(`/media/${mediaId}/frames/${frameId}`))

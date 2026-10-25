@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { supabase, emailPattern, handleDatabaseError } from '../lib/supabase'
+import { supabase } from '../lib/supabase'
+import { api, ApiError, apiErrorText } from '../lib/apiClient'
 
 interface CreateAgencyInput {
   agencyName: string
@@ -44,46 +45,6 @@ export interface DbAgency {
   reviewNotes: string | null
 }
 
-/**
- * Best-effort undo of a registration that failed part-way. Errors are logged,
- * not thrown: the user is already being shown the original failure, which is
- * the one they can act on.
- */
-async function rollback(agencyId: number | null, userId: number | null): Promise<void> {
-  if (agencyId != null) {
-    const { error } = await supabase.from('agency').delete().eq('id', agencyId)
-    if (error) console.error('Registration rollback: could not remove agency', agencyId, error)
-  }
-  if (userId != null) {
-    const { error } = await supabase.from('user').delete().eq('id', userId)
-    if (error) console.error('Registration rollback: could not remove user', userId, error)
-  }
-}
-
-/**
- * Insert a row that carries columns added by supabase/migrations/02_registration_fields.sql.
- *
- * Until that migration has been run, PostgREST rejects an unknown column
- * (PGRST204). Registration must keep working in the meantime, so a rejected
- * new column is dropped and the insert retried — with a console warning, so
- * the missing migration is visible rather than silently losing the field.
- */
-async function insertWithNewColumns(table: string, row: Record<string, unknown>, newColumns: string[]) {
-  let current = { ...row }
-  for (;;) {
-    const result = await supabase.from(table).insert([current]).select().single()
-    const missing =
-      result.error?.code === 'PGRST204'
-        ? newColumns.find((col) => col in current && result.error!.message.includes(col))
-        : undefined
-    if (!missing) return result
-    console.warn(`${table}.${missing} column missing — run migration 02_registration_fields.sql. Saving without it.`)
-    const { [missing]: _dropped, ...rest } = current
-    void _dropped
-    current = rest
-  }
-}
-
 export function useAgencyDatabase() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -97,99 +58,19 @@ export function useAgencyDatabase() {
     setIsLoading(true)
     setError(null)
 
-    // Registration is three writes with no transaction around them. Track what
-    // was created so a failure part-way can be undone: a user row left behind
-    // by a failed agency insert kept its email taken, so every retry of the
-    // same registration failed as a "duplicate" and the agency could never
-    // sign up at all.
-    let createdUserId: number | null = null
-    let createdAgencyId: number | null = null
-
+    // The API creates the inactive Agency Admin and the pending agency together,
+    // hashing the password server side (api/routers/auth.py, POST /auth/register).
     try {
-      const adminEmail = input.adminEmail.trim()
-
-      // Login matches email case-insensitively, but the unique constraint does
-      // not — without this check "Ana@x.org" and "ana@x.org" could both be
-      // registered, and neither could then sign in.
-      const { data: existing, error: lookupError } = await supabase
-        .from('user')
-        .select('id')
-        .ilike('email', emailPattern(adminEmail))
-        .limit(1)
-      if (lookupError) throw lookupError
-      if (existing && existing.length > 0) {
-        const message = 'An account with this email address already exists. Sign in instead, or use a different email.'
-        setError(message)
-        return { success: false, error: message, field: 'adminEmail' }
-      }
-
-      // Step 1: Create admin user account (inactive until agency is approved)
-      const passwordHash = await hashPassword(input.adminPassword)
-
-      const userRow = {
-        email: adminEmail,
-        passwordHash: passwordHash,
-        firstName: input.adminFirstName.trim(),
-        middleName: input.adminMiddleName.trim(),
-        lastName: input.adminLastName.trim(),
-        position: input.adminPosition.trim(),
-        phone: input.adminPhone.trim(),
-        role: 'AGENCY_ADMIN',
-        agencyId: null, // Will be set after agency creation
-        active: false, // Inactive until approved
-        createdAt: new Date().toISOString(),
-      }
-      const { data: userData, error: userError } = await insertWithNewColumns('user', userRow, ['middleName'])
-
-      if (userError) throw userError
-      if (!userData) throw new Error('Failed to create user')
-      createdUserId = userData.id
-
-      // Step 2: Create agency with the user as creator
-      const { data: agencyData, error: agencyError } = await insertWithNewColumns(
-        'agency',
-        {
-          name: input.agencyName.trim(),
-          agencyType: input.agencyType,
-          address: input.agencyAddress.trim(),
-          addressRegionCode: input.agencyAddressRegionCode || null,
-          addressProvinceCode: input.agencyAddressProvinceCode || null,
-          addressCityCode: input.agencyAddressCityCode || null,
-          addressBarangayCode: input.agencyAddressBarangayCode || null,
-          website: input.agencyWebsite?.trim() || null,
-          contactEmail: input.agencyEmail.trim(),
-          contactPhone: input.agencyPhone.trim(),
-          registrationStatus: 'PENDING',
-          accountStatus: 'INACTIVE',
-          subscriptionStatus: 'ACTIVE',
-          createdBy: userData.id,
-          createdAt: new Date().toISOString(),
-        },
-        ['addressRegionCode', 'addressProvinceCode', 'addressCityCode', 'addressBarangayCode'],
-      )
-
-      if (agencyError) throw agencyError
-      if (!agencyData) throw new Error('Failed to create agency')
-      createdAgencyId = agencyData.id
-
-      // Step 3: Update user with agencyId
-      const { error: updateError } = await supabase
-        .from('user')
-        .update({ agencyId: agencyData.id })
-        .eq('id', userData.id)
-
-      if (updateError) throw updateError
-
-      return { agencyId: agencyData.id, userId: userData.id, success: true }
+      const res = await api.post<{ agencyId: number; userId: number }>('/auth/register', input)
+      return { agencyId: res.agencyId, userId: res.userId, success: true }
     } catch (err) {
       console.error('Agency creation error:', err)
-      await rollback(createdAgencyId, createdUserId)
-      const errorMessage = handleDatabaseError(err)
+      const errorMessage = apiErrorText(err)
       setError(errorMessage)
       return {
         success: false,
         error: errorMessage,
-        field: /email/i.test(errorMessage) ? 'adminEmail' : undefined,
+        field: err instanceof ApiError && err.status === 409 ? 'adminEmail' : undefined,
       }
     } finally {
       setIsLoading(false)
@@ -325,13 +206,4 @@ export function useAgencyDatabase() {
     isLoading,
     error,
   }
-}
-
-// Simple password hashing for demo (in production, use proper bcrypt)
-export async function hashPassword(password: string): Promise<string> {
-  const encoder = new TextEncoder()
-  const data = encoder.encode(password)
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
-  const hashArray = Array.from(new Uint8Array(hashBuffer))
-  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('')
 }

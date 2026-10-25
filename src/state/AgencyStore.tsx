@@ -1,6 +1,7 @@
 import { createContext, useContext, useState } from 'react'
 import type { ReactNode } from 'react'
 import { mockAgencies } from '../data/mockAgencies'
+import { demoSeed } from '../lib/demoMode'
 import type { Agency } from '../types/agency'
 
 interface AgencyStoreContextValue {
@@ -13,7 +14,7 @@ const AgencyStoreContext = createContext<AgencyStoreContextValue | undefined>(un
 
 /** Single shared source of truth for Agency records, mounted at the app root. */
 export function AgencyStoreProvider({ children }: { children: ReactNode }) {
-  const [agencies, setAgencies] = useState<Agency[]>(mockAgencies)
+  const [agencies, setAgencies] = useState<Agency[]>(() => demoSeed(mockAgencies))
 
   function addAgency(agency: Agency) {
     setAgencies((prev) => [...prev, agency])

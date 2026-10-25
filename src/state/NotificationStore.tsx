@@ -1,6 +1,7 @@
 import { createContext, useContext, useState } from 'react'
 import type { ReactNode } from 'react'
 import { mockNotifications } from '../data/mockNotifications'
+import { demoSeed } from '../lib/demoMode'
 import type { Notification } from '../types/notification'
 
 interface NotificationStoreContextValue {
@@ -19,7 +20,7 @@ const NotificationStoreContext = createContext<NotificationStoreContextValue | u
  * stores, this can't be forked per-provider.
  */
 export function NotificationStoreProvider({ children }: { children: ReactNode }) {
-  const [notifications, setNotifications] = useState<Notification[]>(mockNotifications)
+  const [notifications, setNotifications] = useState<Notification[]>(() => demoSeed(mockNotifications))
 
   function addNotification(notification: Notification) {
     setNotifications((prev) => [notification, ...prev])

@@ -17,9 +17,10 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Body, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 
-from services import live_hub, responder_registry
+from routers.deps import current_user, require_roles
+from services import auth, live_hub, responder_registry
 
 logger = logging.getLogger("rescueeye.responders")
 router = APIRouter()
@@ -38,7 +39,10 @@ def position_payload(p: responder_registry.ResponderPosition) -> dict:
 
 
 @router.post("/positions")
-async def report_positions(payload: dict = Body(...)) -> dict:
+async def report_positions(
+    payload: dict = Body(...),
+    user: auth.Principal = Depends(require_roles("COMMAND_STAFF", "AGENCY_ADMIN")),
+) -> dict:
     """
     Records responder positions.
 
@@ -58,7 +62,8 @@ async def report_positions(payload: dict = Body(...)) -> dict:
             continue
         try:
             # None means the responder's own device reported more recently; that fix stands.
-            if responder_registry.report(rid, float(lat), float(lng), str(entry.get("name") or "")):
+            if responder_registry.report(rid, float(lat), float(lng), str(entry.get("name") or ""),
+                                         agency_id=user.agency_id):
                 accepted += 1
         except (TypeError, ValueError):
             # One malformed entry should not reject the rest of the batch: the
@@ -68,7 +73,7 @@ async def report_positions(payload: dict = Body(...)) -> dict:
     return {"accepted": accepted, "active": len(responder_registry.active())}
 
 
-async def record_device_fix(responder_id: str, payload: dict) -> dict:
+async def record_device_fix(responder_id: str, payload: dict, user: auth.Principal) -> dict:
     """
     Stores one device GPS fix and pushes it to every live client.
 
@@ -79,6 +84,9 @@ async def record_device_fix(responder_id: str, payload: dict) -> dict:
     responder_id = str(responder_id or "").strip()
     if not responder_id:
         raise ValueError("responder id is required")
+    if responder_id != user.user_id:
+        # A device reports its own position, never someone else's.
+        raise PermissionError("a device can only report its own location")
     try:
         lat, lng = float(payload["lat"]), float(payload["lng"])
     except (KeyError, TypeError, ValueError):
@@ -87,15 +95,17 @@ async def record_device_fix(responder_id: str, payload: dict) -> dict:
         raise ValueError("'lat'/'lng' out of range")
 
     position = responder_registry.report(
-        responder_id, lat, lng, str(payload.get("name") or ""), source="device",
+        responder_id, lat, lng, str(payload.get("name") or ""), source="device", agency_id=user.agency_id,
     )
     body = position_payload(position)
-    await live_hub.broadcast({"type": "responder_location", "responder": body})
+    await live_hub.broadcast({"type": "responder_location", "responder": body}, user.agency_id)
     return body
 
 
 @router.post("/{responder_id}/location")
-async def report_device_location(responder_id: str, payload: dict = Body(...)) -> dict:
+async def report_device_location(
+    responder_id: str, payload: dict = Body(...), user: auth.Principal = Depends(current_user),
+) -> dict:
     """
     Records a responder's GPS fix from their own device and pushes it live.
     Fallback for when the app's WebSocket is not connected.
@@ -103,13 +113,15 @@ async def report_device_location(responder_id: str, payload: dict = Body(...)) -
     Body: {"lat": 10.3, "lng": 123.9, "name": "..."}
     """
     try:
-        return await record_device_fix(responder_id, payload)
+        return await record_device_fix(responder_id, payload, user)
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 
 
 @router.get("")
-async def list_positions() -> dict:
+async def list_positions(user: auth.Principal = Depends(current_user)) -> dict:
     """Currently known responder positions, stale ones already expired."""
     return {
         "responders": [
@@ -119,7 +131,7 @@ async def list_positions() -> dict:
                 "lat": p.lat,
                 "lng": p.lng,
             }
-            for p in responder_registry.active()
+            for p in responder_registry.active(user.agency_id)
         ],
         "exclusion_radius_m": responder_registry.RESPONDER_EXCLUSION_M,
         "ttl_s": responder_registry.RESPONDER_TTL_S,
@@ -127,7 +139,7 @@ async def list_positions() -> dict:
 
 
 @router.delete("")
-async def clear_positions() -> dict:
-    """Drops every known position - used when an operation ends."""
-    responder_registry.reset()
+async def clear_positions(user: auth.Principal = Depends(require_roles("COMMAND_STAFF", "AGENCY_ADMIN"))) -> dict:
+    """Drops every known position of the caller's agency - used when an operation ends."""
+    responder_registry.reset(user.agency_id)
     return {"cleared": True}

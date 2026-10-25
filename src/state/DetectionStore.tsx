@@ -1,6 +1,7 @@
 import { createContext, useContext, useState } from 'react'
 import type { ReactNode } from 'react'
 import { mockDetections } from '../data/mockDetections'
+import { demoSeed } from '../lib/demoMode'
 import type { Detection } from '../types/detection'
 
 interface DetectionStoreContextValue {
@@ -21,7 +22,7 @@ const DetectionStoreContext = createContext<DetectionStoreContextValue | undefin
  * that created it.
  */
 export function DetectionStoreProvider({ children }: { children: ReactNode }) {
-  const [detections, setDetections] = useState<Detection[]>(mockDetections)
+  const [detections, setDetections] = useState<Detection[]>(() => demoSeed(mockDetections))
 
   function addDetection(detection: Detection) {
     setDetections((prev) => [detection, ...prev])

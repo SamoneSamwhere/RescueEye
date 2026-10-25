@@ -1,11 +1,12 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { UserRole } from '../../types/user'
 import type { MockUser } from '../../data/mockUsers'
 import { mockAgencies } from '../../data/mockAgencies'
 import { useUserStore } from '../../state/UserStore'
-import { supabase } from '../../lib/supabase'
-import { hashPassword } from '../../db/useAgencyDatabase'
+import { api, ApiError } from '../../lib/apiClient'
+import { DEMO_MODE } from '../../lib/demoMode'
+import { clearSessionTokens, getApiToken, onSessionExpired, setSessionTokens } from '../../lib/sessionToken'
 
 export interface AuthSession {
   id: string
@@ -29,6 +30,12 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined)
 
 const SESSION_STORAGE_KEY = 'rescueeye.mockSession'
 
+interface LoginResponse {
+  token: string
+  databaseToken: string | null
+  session: { id: string; name: string; email: string; role: UserRole; agencyId: string | null; agencyName: string | null }
+}
+
 function toSession(user: MockUser): AuthSession {
   const agency = mockAgencies.find((candidate) => candidate.id === user.agencyId)
   return {
@@ -41,42 +48,37 @@ function toSession(user: MockUser): AuthSession {
   }
 }
 
-/** Checks a real Supabase user (agency admin, staff, responder) — mock accounts never reach here. */
-async function loginWithSupabase(email: string, password: string): Promise<LoginResult> {
-  const { data: dbUser, error: dbError } = await supabase
-    .from('user')
-    .select('id, email, passwordHash, firstName, lastName, role, agencyId, active')
-    .ilike('email', email.trim())
-    .maybeSingle()
+function loginErrorText(err: unknown): string {
+  if (err instanceof ApiError) {
+    // 401/403 carry the API's own wording ("Invalid email or password.", "deactivated").
+    if (err.status === 401 || err.status === 403) return err.message
+    if (err.status === 0) return "Can't reach the RescueEye server. Check your internet connection and try again."
+  }
+  return 'Sign-in failed. Please try again.'
+}
 
-  if (dbError || !dbUser) {
-    return { ok: false, error: 'Invalid email or password.' }
+/**
+ * The password is checked by the API, which returns a signed session token;
+ * the browser never sees a password hash (api/services/auth.py).
+ */
+async function loginWithApi(email: string, password: string): Promise<{ ok: true; session: AuthSession } | { ok: false; error: string }> {
+  try {
+    const res = await api.post<LoginResponse>('/auth/login', { email: email.trim(), password })
+    setSessionTokens(res.token, res.databaseToken)
+    return {
+      ok: true,
+      session: {
+        id: res.session.id,
+        name: res.session.name,
+        email: res.session.email,
+        role: res.session.role,
+        agencyId: res.session.agencyId ?? undefined,
+        agencyName: res.session.agencyName ?? undefined,
+      },
+    }
+  } catch (err) {
+    return { ok: false, error: loginErrorText(err) }
   }
-
-  const passwordHash = await hashPassword(password)
-  if (passwordHash !== dbUser.passwordHash) {
-    return { ok: false, error: 'Invalid email or password.' }
-  }
-  if (!dbUser.active) {
-    return { ok: false, error: 'This account has been deactivated.' }
-  }
-
-  let agencyName: string | undefined
-  if (dbUser.agencyId) {
-    const { data: agencyData } = await supabase.from('agency').select('name').eq('id', dbUser.agencyId).single()
-    agencyName = agencyData?.name
-  }
-
-  const nextSession: AuthSession = {
-    id: String(dbUser.id),
-    name: `${dbUser.firstName || ''} ${dbUser.lastName || ''}`.trim(),
-    email: dbUser.email,
-    role: dbUser.role as UserRole,
-    agencyId: dbUser.agencyId ? String(dbUser.agencyId) : undefined,
-    agencyName,
-  }
-  window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(nextSession))
-  return { ok: true }
 }
 
 const VALID_ROLES: UserRole[] = ['SYSTEM_ADMIN', 'AGENCY_ADMIN', 'COMMAND_STAFF', 'FIELD_RESPONDER']
@@ -95,18 +97,26 @@ function isValidSession(value: unknown): value is AuthSession {
 }
 
 /**
- * Authentication checks the in-memory mock user directory first (the
- * built-in demo accounts), then falls back to the real Supabase `user`
- * table for accounts created through the real agency registration flow.
+ * Real accounts sign in through the API. In demo mode (lib/demoMode.ts) the
+ * built-in demo accounts are checked here first and then given a demo token
+ * by the API, which must have DEMO_MODE on as well.
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { users } = useUserStore()
   const [session, setSession] = useState<AuthSession | null>(null)
   const [status, setStatus] = useState<'idle' | 'authenticated' | 'unauthenticated'>('idle')
 
+  const logout = useCallback(() => {
+    window.localStorage.removeItem(SESSION_STORAGE_KEY)
+    clearSessionTokens()
+    setSession(null)
+    setStatus('unauthenticated')
+  }, [])
+
   useEffect(() => {
     const raw = window.localStorage.getItem(SESSION_STORAGE_KEY)
-    if (raw) {
+    // A session saved before sign-in moved to the API has no token: sign in again.
+    if (raw && getApiToken()) {
       try {
         const parsed: unknown = JSON.parse(raw)
         if (isValidSession(parsed)) {
@@ -117,13 +127,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch {
         // fall through to clearing the corrupted value below
       }
-      window.localStorage.removeItem(SESSION_STORAGE_KEY)
     }
+    window.localStorage.removeItem(SESSION_STORAGE_KEY)
+    clearSessionTokens()
     setStatus('unauthenticated')
   }, [])
 
+  // The API rejected the token (expired after 12 hours, or the server's secret changed).
+  useEffect(() => onSessionExpired(logout), [logout])
+
+  function start(next: AuthSession) {
+    window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(next))
+    setSession(next)
+    setStatus('authenticated')
+  }
+
   async function login(email: string, password: string): Promise<LoginResult> {
-    const mockUser = users.find((candidate) => candidate.email.toLowerCase() === email.trim().toLowerCase())
+    const mockUser = DEMO_MODE
+      ? users.find((candidate) => candidate.email.toLowerCase() === email.trim().toLowerCase())
+      : undefined
 
     if (mockUser) {
       if (mockUser.password !== password) {
@@ -132,28 +154,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (mockUser.accountStatus !== 'ACTIVE') {
         return { ok: false, error: 'This account has been deactivated.' }
       }
-      const nextSession = toSession(mockUser)
-      window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(nextSession))
-      setSession(nextSession)
-      setStatus('authenticated')
+      const next = toSession(mockUser)
+      try {
+        const res = await api.post<{ token: string; databaseToken: string | null }>('/auth/demo', {
+          id: next.id,
+          role: next.role,
+          agencyId: next.agencyId ?? null,
+        })
+        setSessionTokens(res.token, res.databaseToken)
+      } catch (err) {
+        return {
+          ok: false,
+          error:
+            err instanceof ApiError && err.status === 403
+              ? 'Demo accounts are turned off on this server.'
+              : loginErrorText(err),
+        }
+      }
+      start(next)
       return { ok: true }
     }
 
-    const result = await loginWithSupabase(email, password)
-    if (result.ok) {
-      const raw = window.localStorage.getItem(SESSION_STORAGE_KEY)
-      if (raw) {
-        setSession(JSON.parse(raw) as AuthSession)
-        setStatus('authenticated')
-      }
-    }
-    return result
-  }
-
-  function logout() {
-    window.localStorage.removeItem(SESSION_STORAGE_KEY)
-    setSession(null)
-    setStatus('unauthenticated')
+    const result = await loginWithApi(email, password)
+    if (!result.ok) return result
+    start(result.session)
+    return { ok: true }
   }
 
   return (

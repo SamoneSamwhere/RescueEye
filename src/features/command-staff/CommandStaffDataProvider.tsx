@@ -29,6 +29,7 @@ import { alertLabelFor, incidentTypeFor, isDbId } from '../../lib/incidentClassi
 import { dispatchAlerts } from '../alerts'
 import { useToast } from '../toast'
 import { useDbIncidentHydration } from '../../hooks/useDbIncidentHydration'
+import { fetchSavedDetections, useDetectionPersistence } from './useDetectionPersistence'
 
 /** Fallback operating area — only used the first time an agency captures media, before it has any detections of its own to center on. */
 const DEFAULT_AREA_CENTER: GeoPoint = { lat: 10.3155, lng: 123.895402 }
@@ -103,8 +104,63 @@ export function CommandStaffDataProvider({ children }: { children: ReactNode }) 
   const agencyId = session?.agencyId
   const { missions: allMissions, addMission } = useMissionStore()
   const { incidents: allIncidents, addIncident, updateIncident } = useIncidentStore()
-  const { detections: allDetections, addDetection, updateDetection } = useDetectionStore()
+  const { detections: allDetections, addDetection: storeAddDetection, updateDetection: storeUpdateDetection } =
+    useDetectionStore()
   const { mediaAssets: allMediaAssets, addMediaAsset } = useMediaAssetStore()
+
+  // ── Detection persistence ───────────────────────────────────────────────────
+  // A real agency's detections are saved through the API as they arrive and
+  // as they are reviewed (useDetectionPersistence), so the review queue
+  // survives a refresh. Every write below goes through these two wrappers.
+  const realAccount = isDbId(session?.id) && isDbId(agencyId)
+  const saveDetection = useDetectionPersistence(realAccount)
+  const latest = useRef({ detections: allDetections, mediaAssets: allMediaAssets })
+  useEffect(() => {
+    latest.current = { detections: allDetections, mediaAssets: allMediaAssets }
+  })
+  const mediaAssetOf = useCallback(
+    (detection: Detection) => latest.current.mediaAssets.find((m) => m.id === detection.mediaAssetId) ?? null,
+    [],
+  )
+  const addDetection = useCallback(
+    (detection: Detection) => {
+      storeAddDetection(detection)
+      saveDetection(detection, mediaAssetOf(detection))
+    },
+    [storeAddDetection, saveDetection, mediaAssetOf],
+  )
+  const updateDetection = useCallback(
+    (detectionId: string, patch: Partial<Detection>) => {
+      storeUpdateDetection(detectionId, patch)
+      const current = latest.current.detections.find((d) => d.id === detectionId)
+      if (!current) return
+      const next = { ...current, ...patch }
+      // A review decision is saved at once; a live verdict refresh can wait for the next quiet spell.
+      saveDetection(next, mediaAssetOf(next), patch.validationStatus !== undefined)
+    },
+    [storeUpdateDetection, saveDetection, mediaAssetOf],
+  )
+
+  // After a refresh, bring back the agency's saved detections (and the media
+  // assets they hang off, without which they would be filtered out below).
+  const loadedSavedFor = useRef<string | null>(null)
+  useEffect(() => {
+    if (!realAccount || !agencyId || loadedSavedFor.current === agencyId) return
+    loadedSavedFor.current = agencyId
+    fetchSavedDetections()
+      .then((saved) => {
+        const knownDetections = new Set(latest.current.detections.map((d) => d.id))
+        const knownAssets = new Set(latest.current.mediaAssets.map((m) => m.id))
+        for (const { detection, mediaAsset } of saved) {
+          if (mediaAsset && !knownAssets.has(mediaAsset.id)) {
+            knownAssets.add(mediaAsset.id)
+            addMediaAsset(mediaAsset)
+          }
+          if (!knownDetections.has(detection.id)) storeAddDetection(detection)
+        }
+      })
+      .catch((err: unknown) => console.warn('Could not load saved detections', err))
+  }, [realAccount, agencyId, addMediaAsset, storeAddDetection])
   const { notifications: allNotifications, addNotification } = useNotificationStore()
   const { liveDroneIds: allLiveDroneIds, startLiveFeed, stopLiveFeed } = useDroneStore()
   const { getDronesByAgency, createDrone, updateDrone: updateDbDrone } = useDroneDatabase()
@@ -177,14 +233,18 @@ export function CommandStaffDataProvider({ children }: { children: ReactNode }) 
     [agencyId],
   )
   useResponderPositions(agencyResponders, !!agencyId)
-  const missions = useMemo(
-    () =>
-      allMissions.filter((mission) => {
-        const responder = mockUsers.find((u) => u.id === mission.responderUserId)
-        return responder?.agencyId === agencyId
-      }),
-    [allMissions, agencyId],
-  )
+  // A mission is this agency's when its incident is. The API already sends
+  // only this agency's missions; the demo-responder check covers demo mode,
+  // whose missions are seeded locally. Checking demo responders alone hid
+  // every real responder's missions.
+  const missions = useMemo(() => {
+    const agencyIncidentIds = new Set(incidents.map((i) => i.id))
+    return allMissions.filter((mission) => {
+      if (agencyIncidentIds.has(mission.incidentId)) return true
+      const responder = mockUsers.find((u) => u.id === mission.responderUserId)
+      return responder?.agencyId === agencyId
+    })
+  }, [allMissions, incidents, agencyId])
   const notifications = useMemo(
     () =>
       allNotifications.filter((notification) => {

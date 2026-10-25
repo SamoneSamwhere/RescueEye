@@ -11,6 +11,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from auth_helpers import AUTH_HEADERS
+
 from routers import drone as drone_router
 from services import drone_telemetry, telemetry_sources
 from services.telemetry_sources import TelemetryFix
@@ -28,7 +30,7 @@ def _clean(monkeypatch):
 def client():
     app = FastAPI()
     app.include_router(drone_router.router, prefix="/drone")
-    return TestClient(app)
+    return TestClient(app, headers=AUTH_HEADERS)
 
 
 def _fix(**kw):
