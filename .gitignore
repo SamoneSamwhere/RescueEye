@@ -66,3 +66,7 @@ api/models/placeholder_*
 api/bin/
 api/data/mediamtx.yml
 api/data/mediamtx.log
+
+# Local docs (user guide figures, manuscript material). The three guides
+# already in git (docs/*.md) stay tracked.
+docs/
