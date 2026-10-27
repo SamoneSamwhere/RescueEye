@@ -5,7 +5,6 @@ import { Reveal } from '../components/landing/Reveal'
 import { Button } from '../components/ui'
 import {
   StoredMediaTable,
-  MediaReviewModal,
   AddVideoModal,
   MediaFilterBar,
   EMPTY_MEDIA_FILTERS,
@@ -17,13 +16,13 @@ import { useAuth } from '../features/auth'
 import { useCommandStaffData } from '../features/command-staff'
 import { useToast } from '../features/toast'
 import { mockUsers } from '../data/mockUsers'
-import { useMediaLibrary, useUploadMedia, useCaptureFrame, useDeleteMedia } from '../features/media'
+import { useMediaLibrary, useUploadMedia } from '../features/media'
 import { useMonitorMedia } from '../features/media/useFeeds'
 import type { StoredMedia } from '../types/media'
 
 /**
- * Media Library — recorded footage: upload it, play it with AI detection, and
- * review or capture frames from it. Live drone feeds are started from Drones
+ * Media Library — recorded footage: upload it, play it, or monitor it with AI
+ * detection. Live drone feeds are started from Drones
  * and watched in Live Monitoring.
  */
 export function CommandStaffMediaLibraryPage() {
@@ -33,29 +32,18 @@ export function CommandStaffMediaLibraryPage() {
   const agencyId = session?.agencyId
 
   const toast = useToast()
-  const [reviewingId, setReviewingId] = useState<string | null>(null)
   const [addVideoOpen, setAddVideoOpen] = useState(false)
   const [filters, setFilters] = useState<MediaFilters>(EMPTY_MEDIA_FILTERS)
 
   const library = useMediaLibrary(agencyId)
   const upload = useUploadMedia()
-  const captureFrame = useCaptureFrame()
-  const deleteMedia = useDeleteMedia()
   const monitorMedia = useMonitorMedia()
   // Recorded clips play here, in their own section — Live Monitoring is live feeds only.
   const uploadedFeedsRef = useRef<HTMLDivElement>(null)
   const showUploadedFeeds = () => uploadedFeedsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 
-  // Memoised so the `reviewing` lookup below has a stable dependency; a bare
-  // `?? []` would allocate a new array on every render.
+  // Memoised: a bare `?? []` would allocate a new array on every render.
   const storedMedia = useMemo(() => library.data?.items ?? [], [library.data])
-
-  // Re-read from the freshly fetched list rather than holding the object, so
-  // the modal shows a newly captured frame as soon as the query is invalidated.
-  const reviewing = useMemo(
-    () => storedMedia.find((m) => m.id === reviewingId) ?? null,
-    [storedMedia, reviewingId],
-  )
 
   /** Name and size of every stored clip, so the upload dialog can flag a likely duplicate. */
   const existingClips = useMemo(
@@ -164,25 +152,10 @@ export function CommandStaffMediaLibraryPage() {
     monitorMedia.mutate(media.id, { onSuccess: showUploadedFeeds })
   }
 
-  function handleCaptureFrame(tSec: number) {
-    if (!reviewing) return
-    captureFrame.mutate({ mediaId: reviewing.id, tSec })
-  }
-
-  function handleDeleteMedia(mediaId: string) {
-    deleteMedia.mutate(mediaId, { onSuccess: () => setReviewingId(null) })
-  }
-
   if (!session) return null
 
   const uploadError = upload.error instanceof Error ? upload.error.message : null
   const libraryError = library.error instanceof Error ? library.error.message : null
-  const reviewError =
-    captureFrame.error instanceof Error
-      ? captureFrame.error.message
-      : deleteMedia.error instanceof Error
-        ? deleteMedia.error.message
-        : null
 
   return (
     <>
@@ -208,7 +181,6 @@ export function CommandStaffMediaLibraryPage() {
             loading={library.isLoading}
             error={libraryError}
             droneNameById={droneNameById}
-            onReview={(media: StoredMedia) => setReviewingId(media.id)}
             onMonitor={handleMonitor}
             monitoringId={monitorMedia.isPending ? (monitorMedia.variables ?? null) : null}
             onRetry={() => void library.refetch()}
@@ -256,16 +228,6 @@ export function CommandStaffMediaLibraryPage() {
         onCancelUpload={upload.abort ?? undefined}
       />
 
-      <MediaReviewModal
-        media={reviewing}
-        open={!!reviewing}
-        onClose={() => setReviewingId(null)}
-        onCaptureFrame={handleCaptureFrame}
-        onDelete={handleDeleteMedia}
-        capturing={captureFrame.isPending}
-        deleting={deleteMedia.isPending}
-        error={reviewError}
-      />
     </>
   )
 }

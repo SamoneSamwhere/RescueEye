@@ -24,12 +24,14 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
-from services import live_hub, push_gateway, supabase_db
+from services import geocode, live_hub, push_gateway, supabase_db
 from services.sms_gateway import get_sms_gateway, normalize_ph_number
 
 logger = logging.getLogger("rescueeye.alerts")
 
 MAX_MESSAGE_LENGTH = 300
+# One GSM-7 SMS. Longer messages are sent as several parts, each billed as one SMS.
+SMS_SEGMENT_LENGTH = 160
 CHANNELS = ("SMS", "PUSH", "DASHBOARD")
 
 INCIDENT_TYPE_NAME = {
@@ -90,35 +92,49 @@ def to_client(alert: dict) -> dict:
 
 # ── Message ──────────────────────────────────────────────────────────────────
 
-def compose_message(incident: dict, label: str | None = None) -> str:
+def compose_message(incident: dict, label: str | None = None, place: str | None = None) -> str:
     """
-    Incident type and full label, priority, description and GPS position, in at
-    most 300 characters. Plain ASCII so an SMS stays in the GSM charset (a
-    single non-GSM character switches the whole message to 70-char segments).
+    The alert text: what, where (place name, coordinates and a map link), and
+    what to do, one item per line. Plain ASCII so it stays in the GSM charset
+    (a single non-GSM character switches the whole message to 70-char segments).
+
+    Sized to one SMS (160 characters) when it can be: the least needed parts go
+    first - the "Open RescueEye" line, then the description - but the location
+    never does. Only a very long label or place name can push it past one SMS,
+    and never past MAX_MESSAGE_LENGTH.
     """
     incident_type = incident.get("incidentType") or "UNKNOWN"
     type_name = INCIDENT_TYPE_NAME.get(incident_type, "Unclassified")
     full_label = (label or "").strip()[:60] or DEFAULT_LABEL.get(incident_type, "Incident Reported")
     severity = incident.get("severity") or "UNKNOWN"
+    lat, lng = float(incident["lat"]), float(incident["lng"])
 
-    head = f"RescueEye {severity} ALERT - {type_name}: {full_label}."
-    gps = f"GPS: {float(incident['lat']):.5f}, {float(incident['lng']):.5f}."
+    head = f"RescueEye {severity} ALERT - {type_name}: {full_label}"
+    location = f"Location: {place}" if place else None
+    gps = f"GPS: {lat:.5f}, {lng:.5f}"
+    # No https:// - phones still make it a tappable link, and it saves 8 characters.
+    map_link = f"maps.google.com/?q={lat:.5f},{lng:.5f}"
     tail = "Open RescueEye to accept or decline."
 
     description = " ".join((incident.get("description") or "").split())
-    fixed = len(head) + len(gps) + len(tail) + 2  # spaces between parts
-    if description:
-        room = MAX_MESSAGE_LENGTH - fixed - 1
-        if room <= 3:
-            description = ""
-        elif len(description) > room:
-            description = description[: room - 3].rstrip() + "..."
-        elif not description.endswith((".", "!", "?")):
-            description = (description + ".")[:room]
+    if description and not description.endswith((".", "!", "?")):
+        description += "."
 
-    parts = [head, description, gps, tail] if description else [head, gps, tail]
-    message = " ".join(parts)
-    return message[:MAX_MESSAGE_LENGTH]
+    def build(with_description: bool, with_tail: bool) -> str:
+        lines = [head]
+        if with_description and description:
+            lines.append(description)
+        lines += [x for x in (location, gps, map_link) if x]
+        if with_tail:
+            lines.append(tail)
+        return "\n".join(lines)
+
+    for with_description, with_tail in ((True, True), (True, False), (False, False)):
+        message = build(with_description, with_tail)
+        if len(message) <= SMS_SEGMENT_LENGTH:
+            return message
+    # Even the essentials exceed one SMS: send them in two rather than lose the location.
+    return build(False, False)[:MAX_MESSAGE_LENGTH]
 
 
 # ── Persistence helpers ──────────────────────────────────────────────────────
@@ -273,7 +289,10 @@ async def dispatch(incident_id: int, recipient_ids: list[int], dispatched_by: in
     if incident["status"] == "OPEN":
         await supabase_db.update("incident", incident_id, {"status": "ASSIGNED", "updatedAt": now})
 
-    message = compose_message(incident, label)
+    # The place name is looked up once per dispatch; if it can't be found
+    # quickly the alert goes out with coordinates and the map link alone.
+    place = await geocode.place_name(float(incident["lat"]), float(incident["lng"]))
+    message = compose_message(incident, label, place)
     rows = await supabase_db.insert("alert", [
         {"incidentId": incident_id, "recipientId": uid, "alertType": channel, "message": message,
          "status": "SENT", "sentAt": now, "updatedAt": now}

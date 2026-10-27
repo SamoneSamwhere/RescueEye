@@ -26,7 +26,6 @@ export interface StoredMediaTableProps {
   loading: boolean
   error: string | null
   droneNameById: (droneId: string | null) => string | undefined
-  onReview: (media: StoredMedia) => void
   onMonitor: (media: StoredMedia) => void
   monitoringId: string | null
   onRetry: () => void
@@ -63,7 +62,6 @@ export function StoredMediaTable({
   loading,
   error,
   droneNameById,
-  onReview,
   onMonitor,
   monitoringId,
   onRetry,
@@ -166,7 +164,10 @@ export function StoredMediaTable({
                     </button>
                     <span className="flex min-w-0 items-center gap-1.5">
                       <Film className="size-3.5 shrink-0 text-foreground-muted" />
-                      <span className="truncate text-sm text-foreground">{item.original_name}</span>
+                      {/* Capped so a long file name cannot push Monitor and Play off-screen; the full name shows on hover. */}
+                      <span className="max-w-[12rem] truncate text-sm text-foreground" title={item.original_name}>
+                        {item.original_name}
+                      </span>
                     </span>
                   </div>
                 </TableCell>
@@ -214,9 +215,6 @@ export function StoredMediaTable({
                     >
                       {isPlaying ? <ChevronDown className="size-3.5" /> : <Play className="size-3.5" />}
                       {isPlaying ? 'Close' : 'Play'}
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => onReview(item)}>
-                      Review
                     </Button>
                   </div>
                 </TableCell>

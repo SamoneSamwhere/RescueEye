@@ -1,5 +1,4 @@
 import { Card } from '../../ui'
-import type { User } from '../../../types/user'
 import type { DroneRegistrationData } from './types'
 
 function formatDate(date: Date): string {
@@ -13,11 +12,9 @@ function formatDate(date: Date): string {
 
 interface ReviewStepProps {
   data: DroneRegistrationData
-  availableOperators: User[]
 }
 
-export function ReviewStep({ data, availableOperators }: ReviewStepProps) {
-  const selectedOperator = data.assignedOperatorId ? availableOperators.find((u) => u.id === data.assignedOperatorId) : null
+export function ReviewStep({ data }: ReviewStepProps) {
   const DRONE_TYPE_MAP = {
     QUADCOPTER: 'Quadcopter',
     FIXED_WING: 'Fixed Wing',
@@ -77,13 +74,6 @@ export function ReviewStep({ data, availableOperators }: ReviewStepProps) {
           <p className="text-xs font-medium uppercase tracking-wide text-foreground-muted">Operational Status</p>
           <p className="text-sm font-semibold text-foreground">{STATUS_MAP[data.operationalStatus]}</p>
         </Card>
-
-        {selectedOperator && (
-          <Card className="flex flex-col gap-2 px-4 py-3 md:col-span-2">
-            <p className="text-xs font-medium uppercase tracking-wide text-foreground-muted">Assigned Operator</p>
-            <p className="text-sm font-semibold text-foreground">{selectedOperator.name}</p>
-          </Card>
-        )}
 
         {data.lastInspectionDate && (
           <Card className="flex flex-col gap-2 px-4 py-3">

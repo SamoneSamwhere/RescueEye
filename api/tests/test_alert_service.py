@@ -15,7 +15,7 @@ import asyncio
 
 import pytest
 
-from services import alert_service, live_hub, push_gateway, supabase_db
+from services import alert_service, geocode, live_hub, push_gateway, supabase_db
 from services.sms_gateway import SendResult, normalize_ph_number
 
 INCIDENT = {
@@ -82,6 +82,12 @@ def env(monkeypatch):
         broadcasts.append(message)
 
     monkeypatch.setattr(live_hub, "broadcast", broadcast)
+
+    async def place_name(lat, lng):
+        return "Camputhaw, Cebu City"
+
+    # No network in tests: the place-name lookup answers from here.
+    monkeypatch.setattr(geocode, "place_name", place_name)
     # Delivery follow-ups sleep for seconds; tests check the immediate outcome only.
     monkeypatch.setattr(asyncio, "create_task", lambda coro: coro.close())
     return db, broadcasts
@@ -251,3 +257,37 @@ def test_textbee_sends_e164_number_with_api_key(monkeypatch):
     assert captured["url"] == "https://api.textbee.dev/api/v1/gateway/devices/dev1/send-sms"
     assert captured["json"] == {"recipients": ["+639171234567"], "message": "alert"}
     assert captured["headers"]["x-api-key"] == "key"
+
+
+def test_message_has_place_coordinates_and_map_link_in_one_sms():
+    message = alert_service.compose_message({**INCIDENT, "incidentType": "VICTIM_DETECTED", "description": None},
+                                            None, "Upper Casili, Casili, Mandaue")
+    assert "Location: Upper Casili, Casili, Mandaue" in message
+    assert "GPS: 10.31570, 123.88540" in message
+    assert "maps.google.com/?q=10.31570,123.88540" in message
+    assert len(message) <= alert_service.SMS_SEGMENT_LENGTH
+    assert message.isascii()
+
+
+def test_extras_are_dropped_before_the_location_to_stay_one_sms():
+    message = alert_service.compose_message(INCIDENT, "Major Fire Damage", "Gorordo Avenue, Camputhaw, Cebu City")
+    assert len(message) <= alert_service.SMS_SEGMENT_LENGTH
+    assert "Location:" in message and "GPS:" in message and "maps.google.com" in message
+    assert "Open RescueEye" not in message
+
+
+def test_dispatch_puts_the_place_name_in_the_alert(env):
+    db, _ = env
+    alerts = asyncio.run(alert_service.dispatch(7, [21], 1))
+    assert all("Location: Camputhaw, Cebu City" in a["message"] for a in alerts)
+
+
+@pytest.mark.parametrize("address, expected", [
+    ({"neighbourhood": "Upper Casili", "suburb": "Casili", "city": "Mandaue"}, "Upper Casili, Casili, Mandaue"),
+    ({"road": "Gorordo Avenue", "suburb": "Camputhaw", "city": "Cebu City"}, "Gorordo Avenue, Camputhaw, Cebu City"),
+    ({"village": "Pasil", "town": "Parañaque"}, "Pasil, Paranaque"),
+    ({"suburb": "Mandaue", "city": "Mandaue"}, "Mandaue"),
+    ({}, None),
+])
+def test_place_names_are_short_specific_and_sms_safe(address, expected):
+    assert geocode.format_place(address) == expected

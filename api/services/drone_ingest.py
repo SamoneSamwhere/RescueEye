@@ -56,6 +56,7 @@ RTSP_PORT = int(os.getenv("INGEST_RTSP_PORT", "8554"))
 API_PORT = int(os.getenv("INGEST_API_PORT", "9997"))
 GRACE_S = float(os.getenv("INGEST_GRACE_S", "10"))
 POLL_S = 0.5
+START_ATTEMPTS = 3
 APP = "live"  # rtmp://host:1935/live/<name>
 
 
@@ -163,21 +164,33 @@ def start() -> bool:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     config = DATA_DIR / "mediamtx.yml"
     config.write_text(_config(), encoding="utf-8")
-    try:
-        _proc = subprocess.Popen(
-            [str(binary), str(config)],
-            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        )
-    except OSError as exc:
-        logger.error(f"[ingest] could not start MediaMTX: {exc}")
-        return False
-    # MediaMTX exits at once if a port is taken; give it a moment to say so.
-    time.sleep(0.8)
-    if _proc.poll() is not None:
-        err = (_proc.stderr.read() if _proc.stderr else b"").decode(errors="replace").strip()
-        logger.error(f"[ingest] MediaMTX exited: {err[-300:] or 'no output'} - is port {RTMP_PORT} in use?")
+    # MediaMTX logs to stdout, errors included; keep it in a file so a failed
+    # start says why, rather than "no output". (A pipe nobody reads would
+    # eventually fill and stall the server.)
+    log_path = DATA_DIR / "mediamtx.log"
+    for attempt in range(1, START_ATTEMPTS + 1):
+        try:
+            with log_path.open("wb") as log:
+                _proc = subprocess.Popen(
+                    [str(binary), str(config)],
+                    stdout=log, stderr=subprocess.STDOUT,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
+        except OSError as exc:
+            logger.error(f"[ingest] could not start MediaMTX: {exc}")
+            return False
+        # MediaMTX exits at once if a port is taken; give it a moment to say so.
+        time.sleep(0.8)
+        if _proc.poll() is None:
+            break
+        err = log_path.read_text(encoding="utf-8", errors="replace").strip()
         _proc = None
+        # A previous API process's MediaMTX may still be releasing the port.
+        if attempt < START_ATTEMPTS:
+            logger.warning(f"[ingest] MediaMTX exited ({err[-200:] or 'no output'}); retrying ({attempt}/{START_ATTEMPTS})")
+            time.sleep(2)
+            continue
+        logger.error(f"[ingest] MediaMTX would not start: {err[-300:] or 'no output'} - is port {RTMP_PORT} in use?")
         return False
     _running = True
     _stop.clear()

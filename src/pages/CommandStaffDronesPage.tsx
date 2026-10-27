@@ -7,7 +7,6 @@ import { DroneList, DroneRegistrationModal } from '../components/drones'
 import { Button } from '../components/ui'
 import { ConnectDroneModal } from '../components/media'
 import { useCommandStaffData } from '../features/command-staff'
-import { useUserStore } from '../state/UserStore'
 import { useAddFeed } from '../features/media/useFeeds'
 import { ROUTES } from '../routes/paths'
 
@@ -20,7 +19,6 @@ const CONNECT_DELAY_MS = 800
 export function CommandStaffDronesPage() {
   const navigate = useNavigate()
   const { drones, liveDroneIds, connectDrone, startLiveFeed, addDemoDrone, registerDrone } = useCommandStaffData()
-  const { users } = useUserStore()
 
   const [connectingDroneId, setConnectingDroneId] = useState<string | null>(null)
   const [connectOpen, setConnectOpen] = useState(false)
@@ -108,7 +106,6 @@ export function CommandStaffDronesPage() {
           onClose={() => setRegisterOpen(false)}
           existingSerialNumbers={drones.map((d) => d.serialNumber)}
           existingRegistrationNumbers={drones.flatMap((d) => (d.registrationNumber ? [d.registrationNumber] : []))}
-          availableOperators={users.filter((u) => u.role === 'COMMAND_STAFF' && u.accountStatus === 'ACTIVE')}
           onRegister={registerDrone}
         />
       ) : null}

@@ -10,9 +10,8 @@ import {
   EMPTY_REGISTRATION_DATA,
 } from './registration'
 import type { DroneRegistrationData } from './registration'
-import type { User } from '../../types/user'
 
-const STEP_LABELS = ['Drone Info', 'Registration', 'Assignment', 'Review']
+const STEP_LABELS = ['Drone Info', 'Registration', 'Operations', 'Review']
 const LAST_STEP = STEP_LABELS.length - 1
 
 export interface DroneRegistrationModalProps {
@@ -20,7 +19,6 @@ export interface DroneRegistrationModalProps {
   onClose: () => void
   existingSerialNumbers: string[]
   existingRegistrationNumbers: string[]
-  availableOperators: User[]
   onRegister: (data: DroneRegistrationData) => Promise<{ ok: boolean; error?: string }>
 }
 
@@ -57,7 +55,6 @@ export function DroneRegistrationModal({
   onClose,
   existingSerialNumbers,
   existingRegistrationNumbers,
-  availableOperators,
   onRegister,
 }: DroneRegistrationModalProps) {
   const [step, setStep] = useState(0)
@@ -175,8 +172,8 @@ export function DroneRegistrationModal({
             existingRegistrationNumbers={existingRegistrationNumbers}
           />
         )}
-        {step === 2 && <AssignmentStep data={data} onChange={patch} availableOperators={availableOperators} />}
-        {step === 3 && <ReviewStep data={data} availableOperators={availableOperators} />}
+        {step === 2 && <AssignmentStep data={data} onChange={patch} />}
+        {step === 3 && <ReviewStep data={data} />}
 
         {error ? (
           <div className="rounded-md bg-danger-subtle px-3 py-2 text-sm text-danger-fg" role="alert">
