@@ -15,8 +15,14 @@ import { isDbId } from '../lib/incidentClassification'
 import { formatDateTime } from '../lib/formatDateTime'
 import { notificationsFor } from '../lib/notifications'
 import { useNotificationStore } from '../state/NotificationStore'
+import { useIncidentStore } from '../state/IncidentStore'
+import { useDetectionStore } from '../state/DetectionStore'
+import { DEMO_MODE } from '../lib/demoMode'
 import { fieldResponderMissionDetailPath } from '../routes/paths'
 import { cn } from '../lib/cn'
+import type { IncidentPriority } from '../types/incident'
+import type { AlertStatus } from '../features/alerts'
+import type { Mission } from '../types/mission'
 
 const INCIDENT_TYPE_NAME: Record<string, string> = {
   VICTIM_DETECTED: 'Casualty',
@@ -57,6 +63,95 @@ function groupAlerts(alerts: AlertRecord[]): AlertGroup[] {
     .sort((a, b) => b.sentAt.localeCompare(a.sentAt))
 }
 
+/** What one alert card shows, whether it came from the alert table or demo data. */
+interface AlertCardData {
+  key: string
+  title: string
+  priority?: IncidentPriority
+  message: string
+  sentAt: string
+  status: AlertStatus
+  channels: { key: string; type: AlertType; status: AlertStatus }[]
+}
+
+function AlertCard({ card, onOpen }: { card: AlertCardData; onOpen: () => void }) {
+  const unread = card.status !== 'READ'
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className={cn(
+        'flex w-full flex-col gap-2 rounded-lg border bg-surface px-4 py-3 text-left shadow-panel transition-colors hover:bg-surface-secondary',
+        unread ? 'border-accent/50' : 'border-border',
+      )}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex min-w-0 items-center gap-2">
+          {unread ? <span className="size-2 shrink-0 rounded-full bg-accent" aria-label="Unread" /> : null}
+          <span className={cn('truncate text-sm text-foreground', unread ? 'font-semibold' : 'font-medium')}>{card.title}</span>
+          {card.priority ? <PriorityBadge priority={card.priority} /> : null}
+        </span>
+        <ChevronRight className="size-4 shrink-0 text-foreground-muted" />
+      </div>
+      <p className="line-clamp-3 text-sm text-foreground-secondary">{card.message}</p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-xs text-foreground-muted">{formatDateTime(card.sentAt)}</span>
+        <Badge tone={ALERT_STATUS_TONE[card.status]}>{ALERT_STATUS_LABEL[card.status]}</Badge>
+      </div>
+      <ul className="flex flex-wrap gap-x-3 gap-y-1 border-t border-border pt-2 text-[11px] text-foreground-muted">
+        {card.channels
+          .slice()
+          .sort((a, b) => a.type.localeCompare(b.type))
+          .map((channel) => {
+            const Icon = CHANNEL_ICON[channel.type]
+            return (
+              <li key={channel.key} className="flex items-center gap-1">
+                <Icon className="size-3" />
+                {CHANNEL_NAME[channel.type]}:
+                <span className={cn('font-medium', channel.status === 'FAILED' ? 'text-danger-fg' : 'text-foreground-secondary')}>
+                  {ALERT_STATUS_LABEL[channel.status]}
+                </span>
+              </li>
+            )
+          })}
+      </ul>
+    </button>
+  )
+}
+
+/**
+ * Demo accounts have no rows in the alert table, so in demo mode each of the
+ * responder's mock missions stands in for the dispatch alert that created it.
+ * Missions still awaiting a reply show as unread.
+ */
+function demoAlertCards(
+  missions: Mission[],
+  priorityOf: (incidentId: string) => IncidentPriority | undefined,
+  titleOf: (incidentId: string) => string,
+): (AlertCardData & { missionId: string })[] {
+  return missions
+    .slice()
+    .sort((a, b) => b.dispatchedAt.localeCompare(a.dispatchedAt))
+    .map((mission) => {
+      const status: AlertStatus = mission.status === 'PENDING' ? 'DELIVERED' : 'READ'
+      const priority = priorityOf(mission.incidentId)
+      return {
+        key: mission.id,
+        missionId: mission.id,
+        title: `${titleOf(mission.incidentId)} alert`,
+        priority,
+        message: `You have been dispatched to a ${priority ?? ''} ${titleOf(mission.incidentId).toLowerCase()} incident. Open the mission to accept or decline.`.replace('  ', ' '),
+        sentAt: mission.dispatchedAt,
+        status,
+        channels: (['DASHBOARD', 'PUSH', 'SMS'] as AlertType[]).map((type) => ({
+          key: `${mission.id}-${type}`,
+          type,
+          status: type === 'DASHBOARD' ? status : 'DELIVERED',
+        })),
+      }
+    })
+}
+
 /**
  * Every alert this responder has been sent, newest first. Opening one marks it
  * READ (and records when it was acknowledged), then opens the mission so the
@@ -85,6 +180,21 @@ export function FieldResponderNotificationsPage() {
 
   const notifications = session ? notificationsFor(allNotifications, session.id) : []
 
+  const { incidents } = useIncidentStore()
+  const { detections } = useDetectionStore()
+  const demoCards = useMemo(() => {
+    if (!DEMO_MODE || userId !== null) return []
+    const incident = (id: string) => incidents.find((i) => i.id === id)
+    return demoAlertCards(
+      missions,
+      (id) => incident(id)?.priority,
+      (id) => {
+        const category = detections.find((d) => d.id === incident(id)?.detectionId)?.category
+        return category === 'DAMAGE' ? 'Damage' : category === 'CASUALTY' ? 'Casualty' : 'Incident'
+      },
+    )
+  }, [userId, missions, incidents, detections])
+
   async function open(group: AlertGroup) {
     if (userId === null) return
     if (group.primary.status !== 'READ') {
@@ -111,7 +221,13 @@ export function FieldResponderNotificationsPage() {
           <p className="text-sm text-foreground-secondary">Every mission alert sent to you. Tap one to open the mission.</p>
         </header>
 
-        {userId === null ? (
+        {demoCards.length > 0 ? (
+          <Reveal className="flex flex-col gap-2">
+            {demoCards.map((card) => (
+              <AlertCard key={card.key} card={card} onOpen={() => navigate(fieldResponderMissionDetailPath(card.missionId))} />
+            ))}
+          </Reveal>
+        ) : userId === null ? (
           <Card className="px-4 py-3">
             <EmptyState
               icon={Inbox}
@@ -133,51 +249,16 @@ export function FieldResponderNotificationsPage() {
           <Reveal className="flex flex-col gap-2">
             {groups.map((group) => {
               const incident = incidentById.get(group.incidentId)
-              const unread = group.primary.status !== 'READ'
-              return (
-                <button
-                  key={group.key}
-                  type="button"
-                  onClick={() => open(group)}
-                  className={cn(
-                    'flex w-full flex-col gap-2 rounded-lg border bg-surface px-4 py-3 text-left shadow-panel transition-colors hover:bg-surface-secondary',
-                    unread ? 'border-accent/50' : 'border-border',
-                  )}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="flex min-w-0 items-center gap-2">
-                      {unread ? <span className="size-2 shrink-0 rounded-full bg-accent" aria-label="Unread" /> : null}
-                      <span className={cn('truncate text-sm text-foreground', unread ? 'font-semibold' : 'font-medium')}>
-                        {incident ? INCIDENT_TYPE_NAME[incident.incidentType] ?? 'Incident' : 'Incident'} alert
-                      </span>
-                      {incident ? <PriorityBadge priority={incident.severity} /> : null}
-                    </span>
-                    <ChevronRight className="size-4 shrink-0 text-foreground-muted" />
-                  </div>
-                  <p className="line-clamp-3 text-sm text-foreground-secondary">{group.message}</p>
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="text-xs text-foreground-muted">{formatDateTime(group.sentAt)}</span>
-                    <Badge tone={ALERT_STATUS_TONE[group.primary.status]}>{ALERT_STATUS_LABEL[group.primary.status]}</Badge>
-                  </div>
-                  <ul className="flex flex-wrap gap-x-3 gap-y-1 border-t border-border pt-2 text-[11px] text-foreground-muted">
-                    {group.channels
-                      .slice()
-                      .sort((a, b) => a.alertType.localeCompare(b.alertType))
-                      .map((alert) => {
-                        const Icon = CHANNEL_ICON[alert.alertType]
-                        return (
-                          <li key={alert.id} className="flex items-center gap-1">
-                            <Icon className="size-3" />
-                            {CHANNEL_NAME[alert.alertType]}:
-                            <span className={cn('font-medium', alert.status === 'FAILED' ? 'text-danger-fg' : 'text-foreground-secondary')}>
-                              {ALERT_STATUS_LABEL[alert.status]}
-                            </span>
-                          </li>
-                        )
-                      })}
-                  </ul>
-                </button>
-              )
+              const card: AlertCardData = {
+                key: group.key,
+                title: `${incident ? INCIDENT_TYPE_NAME[incident.incidentType] ?? 'Incident' : 'Incident'} alert`,
+                priority: incident?.severity,
+                message: group.message,
+                sentAt: group.sentAt,
+                status: group.primary.status,
+                channels: group.channels.map((a) => ({ key: String(a.id), type: a.alertType, status: a.status })),
+              }
+              return <AlertCard key={group.key} card={card} onOpen={() => open(group)} />
             })}
           </Reveal>
         )}
