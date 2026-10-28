@@ -62,14 +62,14 @@ export function LandingFooter() {
             <ul className="mt-3 flex flex-col gap-2">
               <li className="flex items-center gap-2 text-sm text-foreground-secondary">
                 <Mail className="size-4 shrink-0" />
-                <a href="mailto:ops@rescueeye.example" className="hover:text-foreground">
-                  ops@rescueeye.example
+                <a href="mailto:rescueeyedev@gmail.com" className="hover:text-foreground">
+                  rescueeyedev@gmail.com
                 </a>
               </li>
               <li className="flex items-center gap-2 text-sm text-foreground-secondary">
                 <Phone className="size-4 shrink-0" />
-                <a href="tel:+10000000000" className="hover:text-foreground">
-                  +1 (000) 000-0000
+                <a href="tel:+639487177945" className="hover:text-foreground">
+                  0948 717 7945
                 </a>
               </li>
             </ul>
