@@ -39,9 +39,12 @@ export function MobileShell({ navItems, notifications = [], children }: MobileSh
     }))
 
   return (
-    <div className="relative mx-auto flex min-h-screen w-full max-w-md flex-col overflow-hidden border-x border-border bg-background">
+    // overflow-x-clip, not overflow-hidden: hidden makes this div a scroll
+    // container, which stops the sticky top bar from sticking to the screen.
+    <div className="relative mx-auto flex min-h-screen w-full max-w-md flex-col overflow-x-clip border-x border-border bg-background">
       <MobileTopBar notifications={[...alertNotifications, ...notifications]} historyHref={ROUTES.fieldResponderNotifications} />
-      <main className="relative flex-1">
+      {/* Bottom padding = the floating nav's height, so the last content clears it. */}
+      <main className="relative flex-1 pb-[calc(5.5rem+env(safe-area-inset-bottom))]">
         <DashboardBackdrop />
         <div className="relative z-10 min-h-full">{children}</div>
       </main>
