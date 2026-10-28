@@ -1,6 +1,6 @@
 task: detect
 mode: train
-model: D:\RE RescueEye\RE-RescueEye\api\models\victim_best.pt
+model: D:\RE RescueEye\RE-RescueEye\api\runs\victim_small\train\weights\last.pt
 data: D:\RE RescueEye\RE-RescueEye\api\data\small_person.yaml
 epochs: 12
 time: null
@@ -24,7 +24,7 @@ single_cls: false
 rect: false
 cos_lr: true
 close_mosaic: 5
-resume: false
+resume: D:\RE RescueEye\RE-RescueEye\api\runs\victim_small\train\weights\last.pt
 amp: true
 fraction: 1.0
 profile: false

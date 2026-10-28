@@ -9,9 +9,36 @@
 
 import { getApiToken, notifySessionExpired } from './sessionToken'
 
-/** Base URL of the Python API. Override with VITE_API_BASE_URL in .env. */
-export const API_BASE_URL: string =
+const API_BASE_URL_KEY = 'rescueeye.apiBaseUrl'
+
+/** The address this build was made with (VITE_API_BASE_URL in .env / .env.mobile). */
+export const BUILT_IN_API_BASE_URL: string =
   import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') ?? 'http://127.0.0.1:8000'
+
+function storedApiBaseUrl(): string | null {
+  try {
+    return localStorage.getItem(API_BASE_URL_KEY)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Base URL of the Python API. An address saved on this device (the server
+ * setting on the sign-in screen) wins over the built-in one, so the installed
+ * APK follows a new tunnel or laptop IP without being rebuilt.
+ */
+export const API_BASE_URL: string = storedApiBaseUrl() ?? BUILT_IN_API_BASE_URL
+
+/** Saves (or with null, clears) this device's API address. Takes effect on reload. */
+export function saveApiBaseUrl(url: string | null): void {
+  try {
+    if (url) localStorage.setItem(API_BASE_URL_KEY, url.replace(/\/+$/, ''))
+    else localStorage.removeItem(API_BASE_URL_KEY)
+  } catch {
+    // Storage blocked: the built-in address stays in use.
+  }
+}
 
 export class ApiError extends Error {
   readonly status: number

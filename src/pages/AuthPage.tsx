@@ -4,6 +4,7 @@ import { Navigate, useSearchParams } from 'react-router-dom'
 import { Building2, CheckCircle2, LogIn } from 'lucide-react'
 import { useAuth, ROLE_HOME_ROUTE } from '../features/auth'
 import { IS_RESPONDER_APP } from '../lib/appTarget'
+import { ServerAddressSetting } from '../components/field-responder/ServerAddressSetting'
 import { Field, Input, Button } from '../components/ui'
 import { AuthPageShell, Reveal } from '../components/landing'
 import { AuthCardDecor } from '../components/landing/AuthCardDecor'
@@ -434,6 +435,7 @@ export function AuthPage() {
                   {isLoggingIn ? 'Signing in…' : 'Sign in'}
                 </Button>
               </form>
+              {IS_RESPONDER_APP ? <ServerAddressSetting /> : null}
             </div>
 
             {/* Sign up slot — desktop only; agency registration is not part of the mobile field-responder app.
