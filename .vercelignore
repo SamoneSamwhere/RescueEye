@@ -1,0 +1,5 @@
+# Vercel hosts only the website. A top-level api/ folder would otherwise be
+# deployed as serverless functions - here it is the Python backend (PyTorch,
+# AI models, several GB), which runs on the RescueEye server instead.
+/api
+/android
