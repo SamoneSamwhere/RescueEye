@@ -4,6 +4,7 @@ import {
   PurposeBand,
   CapabilitiesGrid,
   WorkflowTimeline,
+  MobileAppSection,
   CtaSection,
   LandingFooter,
 } from '../components/landing'
@@ -17,6 +18,7 @@ function LandingPageContent() {
         <PurposeBand />
         <CapabilitiesGrid />
         <WorkflowTimeline />
+        <MobileAppSection />
         <CtaSection />
       </main>
       <LandingFooter />
