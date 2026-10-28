@@ -228,6 +228,14 @@ npm run android:apk   # builds dist/ with .env.mobile, syncs, runs Gradle
   itself, so use the laptop's Wi-Fi IP (or a hosted/tunnelled URL) and rebuild when it changes.
 - Run the API with `--host 0.0.0.0` so the phone can reach it, on the same Wi-Fi.
 
+**Website download.** `npm run android:apk` also copies the APK to
+`public/downloads/RescueEye-FieldResponder.apk`, which the landing page's
+"Download Field Responder App" button links to. Commit that file (or upload it
+with the deploy) so Vercel serves it; `vercel.json` keeps `/downloads/` out of
+the SPA rewrite, so a missing APK is a 404 rather than index.html saved as
+`.apk`. To host the APK elsewhere (e.g. a GitHub release asset), set
+`VITE_APK_DOWNLOAD_URL` for the website build instead.
+
 ## AI models
 
 | Model | File | Trained on | Used for |

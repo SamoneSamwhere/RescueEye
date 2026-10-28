@@ -6,6 +6,7 @@ import logo from '../../assets/logo.png'
 const PRODUCT_LINKS = [
   { label: 'Capabilities', href: '#capabilities' },
   { label: 'How it works', href: '#workflow' },
+  { label: 'Field Responder app', href: '#mobile-app' },
 ]
 
 export function LandingFooter() {

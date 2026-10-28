@@ -1,4 +1,5 @@
 export { Button } from './Button'
+export { buttonClasses } from './buttonClasses'
 export { DetailField } from './DetailField'
 export { Input } from './Input'
 export { Field } from './Field'
