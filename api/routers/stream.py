@@ -24,10 +24,11 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw
-from fastapi import APIRouter, Body, File, HTTPException, UploadFile
+from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile
 from fastapi.responses import Response, StreamingResponse
 
-from services import drone_ingest
+from routers.deps import current_user
+from services import auth, drone_ingest, supabase_db
 from services import feed_registry as registry
 from services.feed_registry import (
     FeedLimitReached,
@@ -228,14 +229,35 @@ def _lan_addresses() -> list[str]:
 
 
 
+async def _registered_drone(drone_id, user: auth.Principal) -> dict:
+    """The caller's agency's `drone` row for this id; anything else is refused."""
+    if drone_id in (None, ""):
+        raise HTTPException(400, "Choose a registered drone to connect.")
+    try:
+        rows = await supabase_db.select("drone", id=int(drone_id))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "Choose a registered drone to connect.")
+    except supabase_db.DatabaseNotConfigured as exc:
+        raise HTTPException(503, str(exc))
+    except supabase_db.DatabaseError:
+        raise HTTPException(502, "Could not check the drone registry. Try again.")
+    if not rows:
+        raise HTTPException(404, "That drone is not registered. Register it first.")
+    drone = rows[0]
+    if user.agency_id is not None and str(drone.get("agencyId")) != str(user.agency_id):
+        raise HTTPException(403, "That drone is registered to another agency.")
+    return drone
+
+
 @router.get("/publish-target")
-async def publish_target(port: int = DEFAULT_RTMP_PORT, key: str = "dji", name: str | None = None):
+async def publish_target(port: int = DEFAULT_RTMP_PORT, key: str = "dji", drone_id: int | None = None,
+                         user: auth.Principal = Depends(current_user)):
     """
     Where a push-only aircraft should send its stream.
 
-    With always-on ingest (services/drone_ingest.py, mode "server") each drone
-    gets its own address from `name`, nothing needs registering, and the feed
-    opens by itself when the drone goes live. `publishUrls` are what the pilot
+    With always-on ingest (services/drone_ingest.py, mode "server") each
+    registered drone (`drone_id`) gets its own address, and the feed opens by
+    itself when the drone goes live; streams to any other address are ignored. `publishUrls` are what the pilot
     puts into the drone app, which must name a routable address rather than
     localhost.
 
@@ -244,7 +266,8 @@ async def publish_target(port: int = DEFAULT_RTMP_PORT, key: str = "dji", name: 
     """
     addrs = _lan_addresses()
     if drone_ingest.is_running():
-        path = drone_ingest.stream_path(name or "drone")
+        drone = await _registered_drone(drone_id, user)
+        path = drone_ingest.remember(drone["id"], drone.get("callsign") or "drone")
         return {
             "mode":         "server",
             "listenSource": None,
@@ -277,12 +300,19 @@ async def list_feeds():
 
 
 @router.post("/feeds", status_code=201)
-async def add_live_feed(payload: dict = Body(...)):
-    """Adds a feed from a live URL (rtsp/rtmp/http) or a local file path."""
+async def add_live_feed(payload: dict = Body(...), user: auth.Principal = Depends(current_user)):
+    """
+    Adds a feed from a live URL (rtsp/rtmp/http) or a local file path.
+
+    A live URL is a drone, so it needs `droneId`: only registered drones connect.
+    """
     source = (payload.get("source") or "").strip()
     label = (payload.get("label") or "").strip() or None
     if not source:
         raise HTTPException(400, "A 'source' URL or path is required.")
+    if "://" in source:
+        drone = await _registered_drone(payload.get("droneId"), user)
+        label = drone.get("callsign") or label
     if registry._is_listen_source(source) and _port_in_use(_source_port(source)):
         # Windows lets a second socket bind the same port, so this would
         # otherwise "succeed" and then lose the race for incoming streams to

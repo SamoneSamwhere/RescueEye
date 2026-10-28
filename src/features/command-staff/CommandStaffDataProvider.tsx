@@ -3,7 +3,6 @@ import type { ReactNode } from 'react'
 import { mockUsers } from '../../data/mockUsers'
 import { now } from '../../lib/now'
 import { generateId } from '../../lib/id'
-import { DEMO_DRONE_ID_PREFIX, isDemoDroneId } from '../../lib/demoDrone'
 import { runMockDetection } from '../../lib/mockAiService'
 import { ACTIVE_MISSION_STATUSES } from '../../lib/missionStatus'
 import type { Detection } from '../../types/detection'
@@ -72,15 +71,6 @@ interface CommandStaffDataContextValue {
     lastInspectionDate?: string
     notes?: string
   }) => Promise<{ ok: boolean; error?: string }>
-  /**
-   * Adds a ready-to-use drone for the current session only.
-   *
-   * `registerDrone` writes to Supabase and is closed to demo accounts, so on a
-   * mock login — or with the database unreachable — there is no way to get a
-   * drone onto the page, and every downstream action (connect, live feed,
-   * attach footage) is gated behind having one. This is the way in.
-   */
-  addDemoDrone: () => Drone
   connectDrone: (droneId: string) => Promise<void>
   startLiveFeed: (droneId: string) => void
   stopLiveFeed: (droneId: string) => void
@@ -253,22 +243,19 @@ export function CommandStaffDataProvider({ children }: { children: ReactNode }) 
       }),
     [allNotifications, agencyId],
   )
-  const [dbDrones, setDbDrones] = useState<Drone[]>([])
-  // Session-only drones from addDemoDrone. Held separately so refreshDrones,
-  // which replaces the list wholesale from Supabase, cannot wipe them.
-  const [demoDrones, setDemoDrones] = useState<Drone[]>([])
+  // Only drones registered in the agency's registry (Supabase) — there is no
+  // session-only stand-in, so nothing unregistered can be connected.
+  const [drones, setDrones] = useState<Drone[]>([])
 
   const refreshDrones = useCallback(async () => {
     if (!agencyId) {
-      setDbDrones([])
+      setDrones([])
       return
     }
     const records = await getDronesByAgency(Number(agencyId))
-    setDbDrones(records.map(mapDroneRecordToDrone))
+    setDrones(records.map(mapDroneRecordToDrone))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agencyId])
-
-  const drones = useMemo(() => [...dbDrones, ...demoDrones], [dbDrones, demoDrones])
 
   useEffect(() => {
     refreshDrones()
@@ -544,43 +531,8 @@ export function CommandStaffDataProvider({ children }: { children: ReactNode }) 
     return { ok: true }
   }
 
-  function addDemoDrone(): Drone {
-    const nowIso = now().toISOString()
-    const ordinal = demoDrones.length + 1
-    const drone: Drone = {
-      id: `${DEMO_DRONE_ID_PREFIX}${ordinal}-${newAssetSuffix()}`,
-      agencyId: agencyId ?? 'agency-demo',
-      name: `Demo Drone ${ordinal}`,
-      model: 'RescueEye Demo Unit',
-      manufacturer: 'RescueEye',
-      droneType: 'QUADCOPTER',
-      serialNumber: `DEMO-${String(ordinal).padStart(3, '0')}`,
-      dateAcquired: nowIso,
-      operationalStatus: 'ACTIVE',
-      // Starts disconnected so the operator still walks the real flow —
-      // connect, then choose a feed source — rather than skipping straight
-      // past the steps this drone exists to let them exercise.
-      connectionStatus: 'DISCONNECTED',
-      registeredAt: nowIso,
-      notes: 'Session-only demo drone. Not saved to the agency drone registry.',
-    }
-    setDemoDrones((current) => [...current, drone])
-    return drone
-  }
-
   async function connectDrone(droneId: string) {
-    // A demo drone has no database row; Number('demo-drone-…') is NaN and the
-    // update would fail silently, leaving the card stuck on Offline.
-    if (isDemoDroneId(droneId)) {
-      setDemoDrones((current) =>
-        current.map((d) =>
-          d.id === droneId
-            ? { ...d, connectionStatus: 'CONNECTED', lastConnectedAt: now().toISOString() }
-            : d,
-        ),
-      )
-      return
-    }
+    if (!isDbId(droneId)) return
     await updateDbDrone(Number(droneId), { status: 'ACTIVE', lastFeedAt: new Date().toISOString() })
     await refreshDrones()
   }
@@ -594,7 +546,6 @@ export function CommandStaffDataProvider({ children }: { children: ReactNode }) 
         mediaAssets,
         notifications,
         drones,
-        addDemoDrone,
         liveDroneIds,
         verifyDetection,
         rejectDetection,

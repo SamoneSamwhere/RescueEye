@@ -108,16 +108,17 @@ export interface PublishTarget {
 }
 
 /**
- * Where a drone app should push its stream. In server mode `droneName` picks
- * the drone's own address, and the query polls so the screen can say the
+ * Where a drone app should push its stream. In server mode `droneId` (a
+ * registered drone) picks the drone's own address, and the query polls so the screen can say the
  * moment that drone goes live.
  */
-export function usePublishTarget(enabled = true, droneName = '') {
+export function usePublishTarget(enabled = true, droneId = '') {
   return useQuery({
-    queryKey: ['publish-target', droneName],
+    queryKey: ['publish-target', droneId],
     queryFn: () =>
-      api.get<PublishTarget>(`/stream/publish-target${droneName ? `?name=${encodeURIComponent(droneName)}` : ''}`),
-    enabled,
+      api.get<PublishTarget>(`/stream/publish-target${droneId ? `?drone_id=${encodeURIComponent(droneId)}` : ''}`),
+    // Server mode hands out an address only for a registered drone, so wait until one is chosen.
+    enabled: enabled && droneId !== '',
     staleTime: 60_000,
     refetchInterval: (query) => (query.state.data?.mode === 'server' ? 1500 : false),
   })
@@ -127,7 +128,7 @@ export function usePublishTarget(enabled = true, droneName = '') {
 export function useAddFeed() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (input: { source: string; label?: string }) =>
+    mutationFn: (input: { source: string; label?: string; droneId: string }) =>
       api.post<Feed>('/stream/feeds', input),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: [FEEDS_KEY] })

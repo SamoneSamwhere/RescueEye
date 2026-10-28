@@ -15,6 +15,9 @@ alongside the API and is always listening:
     on Live Monitoring on its own, with detection running. When a drone stops
     streaming for INGEST_GRACE_S, its feed closes again.
   - Every drone shares port 1935; only the name in the address differs.
+  - Only drones in the registry (the `drone` table) get a feed. A registered
+    drone's address is live/<callsign>-<id>; a stream on any other path is
+    ignored, and a drone removed from the registry has its feed closed.
 
 MediaMTX only accepts video *in* from the network; reading it back out is
 limited to this computer, so nothing else on the Wi-Fi can watch the feeds.
@@ -43,7 +46,10 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+import httpx
+
 from services import feed_registry as registry
+from services import supabase_db
 
 logger = logging.getLogger("rescueeye.ingest")
 
@@ -56,6 +62,7 @@ RTSP_PORT = int(os.getenv("INGEST_RTSP_PORT", "8554"))
 API_PORT = int(os.getenv("INGEST_API_PORT", "9997"))
 GRACE_S = float(os.getenv("INGEST_GRACE_S", "10"))
 POLL_S = 0.5
+REGISTRY_REFRESH_S = 15  # how often the list of registered drones is re-read
 START_ATTEMPTS = 3
 APP = "live"  # rtmp://host:1935/live/<name>
 
@@ -66,6 +73,8 @@ _state_lock = threading.Lock()
 _feed_for_path: dict[str, str] = {}     # "live/drone1" -> feed id
 _last_seen: dict[str, float] = {}       # path -> monotonic time it was last ready
 _dismissed: set[str] = set()            # closed by an operator while still live
+_registered: dict[str, str] = {}        # path -> label, for registered drones only
+_ignored: set[str] = set()              # unregistered paths already logged
 _running = False
 
 
@@ -98,6 +107,41 @@ def slugify(name: str) -> str:
 
 def stream_path(name: str) -> str:
     return f"{APP}/{slugify(name)}"
+
+
+def drone_stream_path(drone_id: int | str, callsign: str) -> str:
+    """A registered drone's address: its callsign for the pilot, its id so it is unique."""
+    return f"{APP}/{slugify(callsign)}-{drone_id}"
+
+
+def set_registered(drones: list[dict]) -> None:
+    """Replaces the registry with these `drone` rows (id, callsign)."""
+    paths = {drone_stream_path(d["id"], d.get("callsign") or "drone"): d.get("callsign") or "Drone" for d in drones}
+    with _state_lock:
+        _registered.clear()
+        _registered.update(paths)
+
+
+def remember(drone_id: int | str, callsign: str) -> str:
+    """Adds one registered drone now, so a just-registered drone needn't wait for a refresh."""
+    path = drone_stream_path(drone_id, callsign)
+    with _state_lock:
+        _registered[path] = callsign or "Drone"
+    return path
+
+
+def _refresh_registered() -> None:
+    """Re-reads the registry. On failure the last known list stays, so a DB blip doesn't drop live feeds."""
+    try:
+        url, key = supabase_db._config()
+        res = httpx.get(
+            f"{url}/rest/v1/drone", params={"select": "id,callsign"},
+            headers={"apikey": key, "Authorization": f"Bearer {key}"}, timeout=5,
+        )
+        res.raise_for_status()
+        set_registered(res.json())
+    except (supabase_db.DatabaseNotConfigured, httpx.HTTPError, ValueError) as exc:
+        logger.warning(f"[ingest] could not read the drone registry: {exc}")
 
 
 def _config() -> str:
@@ -230,13 +274,12 @@ def _ready_paths() -> dict[str, dict]:
     return {item["name"]: item for item in _get("/v3/paths/list") if item.get("ready")}
 
 
-def _label(path: str) -> str:
-    name = path.split("/", 1)[-1]
-    return name.replace("-", " ").replace("_", " ").title()
-
-
 def _watch() -> None:
+    next_refresh = 0.0
     while not _stop.is_set():
+        if time.monotonic() >= next_refresh:
+            _refresh_registered()
+            next_refresh = time.monotonic() + REGISTRY_REFRESH_S
         try:
             sync(_ready_paths())
         except (urllib.error.URLError, OSError, ValueError) as exc:
@@ -251,6 +294,14 @@ def sync(ready: dict[str, dict], now: float | None = None) -> None:
     """
     now = time.monotonic() if now is None else now
     with _state_lock:
+        # Unregistered streams are treated as if they weren't there: no feed
+        # opens, and a drone dropped from the registry mid-flight closes.
+        for path in ready.keys() - _registered.keys() - _ignored:
+            logger.warning(f"[ingest] {path} is streaming but is not a registered drone - ignored")
+            _ignored.add(path)
+        _ignored.intersection_update(ready.keys())
+        ready = {path: item for path, item in ready.items() if path in _registered}
+
         # Feeds an operator closed by hand: forget them so they are re-opened
         # next time, but only once that stream has actually stopped.
         live_ids = {f.id for f in registry.list_feeds()}
@@ -267,7 +318,7 @@ def sync(ready: dict[str, dict], now: float | None = None) -> None:
                 continue
             source = f"rtsp://127.0.0.1:{RTSP_PORT}/{path}"
             try:
-                feed = registry.add_feed(source=source, label=_label(path), kind="live", ingest_path=path)
+                feed = registry.add_feed(source=source, label=_registered[path], kind="live", ingest_path=path)
             except registry.FeedLimitReached:
                 logger.warning(f"[ingest] {path} is live but all {registry.MAX_FEEDS} feed slots are full")
                 continue
@@ -308,3 +359,5 @@ def reset() -> None:
         _feed_for_path.clear()
         _last_seen.clear()
         _dismissed.clear()
+        _registered.clear()
+        _ignored.clear()

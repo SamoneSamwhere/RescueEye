@@ -12,6 +12,7 @@ from auth_helpers import AUTH_HEADERS
 
 from main import app
 from services import feed_registry as registry
+from services import supabase_db
 
 SOURCE = "d:/RescueEye/api/data/demo_feed8_trim.mp4"
 
@@ -126,6 +127,25 @@ class TestFeedEndpoints:
         res = client.delete(f"/stream/feeds/{added['id']}")
         assert res.status_code == 200
         assert res.json()["removed"] == added["id"]
+
+    def test_a_live_url_needs_a_registered_drone(self, client):
+        res = client.post("/stream/feeds", json={"source": "rtsp://10.0.0.5/live"})
+        assert res.status_code == 400
+        assert "registered drone" in res.json()["detail"]
+
+    def test_an_unknown_drone_is_refused(self, client, monkeypatch):
+        async def no_rows(table, **filters):
+            return []
+        monkeypatch.setattr(supabase_db, "select", no_rows)
+        res = client.post("/stream/feeds", json={"source": "rtsp://10.0.0.5/live", "droneId": "99"})
+        assert res.status_code == 404
+
+    def test_another_agencys_drone_is_refused(self, client, monkeypatch):
+        async def foreign(table, **filters):
+            return [{"id": 3, "callsign": "Other", "agencyId": 42}]
+        monkeypatch.setattr(supabase_db, "select", foreign)
+        res = client.post("/stream/feeds", json={"source": "rtsp://10.0.0.5/live", "droneId": "3"})
+        assert res.status_code == 403
 
     def test_delete_unknown_is_404(self, client):
         assert client.delete("/stream/feeds/ghost").status_code == 404

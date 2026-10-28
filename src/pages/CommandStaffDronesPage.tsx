@@ -18,7 +18,7 @@ const CONNECT_DELAY_MS = 800
  */
 export function CommandStaffDronesPage() {
   const navigate = useNavigate()
-  const { drones, liveDroneIds, connectDrone, startLiveFeed, addDemoDrone, registerDrone } = useCommandStaffData()
+  const { drones, liveDroneIds, connectDrone, startLiveFeed, registerDrone } = useCommandStaffData()
 
   const [connectingDroneId, setConnectingDroneId] = useState<string | null>(null)
   const [connectOpen, setConnectOpen] = useState(false)
@@ -33,13 +33,6 @@ export function CommandStaffDronesPage() {
     }, CONNECT_DELAY_MS)
   }
 
-  function handleAddDemoDrone() {
-    const drone = addDemoDrone()
-    // Connect it immediately: an operator who asked for a demo drone wants to
-    // reach the feed step, not watch a second spinner first.
-    handleConnect(drone.id)
-  }
-
   /**
    * Opens a real live source as a feed and hands off to Live Monitoring.
    *
@@ -47,9 +40,9 @@ export function CommandStaffDronesPage() {
    * so the feed is registered *before* the pilot starts streaming — the panel
    * simply stays dark until frames arrive.
    */
-  function handleConnectFeed(source: string, label: string) {
+  function handleConnectFeed(source: string, label: string, droneId: string) {
     addFeed.mutate(
-      { source, label },
+      { source, label, droneId },
       {
         onSuccess: () => {
           setConnectOpen(false)
@@ -94,7 +87,6 @@ export function CommandStaffDronesPage() {
             onStartLiveFeed={handleStartLiveFeed}
             onViewLive={() => navigate(ROUTES.commandStaffLiveMonitoring)}
             onRegisterClick={() => setRegisterOpen(true)}
-            onAddDemoDrone={handleAddDemoDrone}
           />
         </Reveal>
       </div>
@@ -113,6 +105,11 @@ export function CommandStaffDronesPage() {
       <ConnectDroneModal
         open={connectOpen}
         onClose={() => setConnectOpen(false)}
+        drones={drones}
+        onRegisterClick={() => {
+          setConnectOpen(false)
+          setRegisterOpen(true)
+        }}
         onConnect={handleConnectFeed}
         connecting={addFeed.isPending}
         error={addFeed.error instanceof Error ? addFeed.error.message : null}
