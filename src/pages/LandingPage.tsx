@@ -1,7 +1,6 @@
 import {
   LandingHeader,
   HeroSection,
-  PurposeBand,
   CapabilitiesGrid,
   WorkflowTimeline,
   MobileAppSection,
@@ -14,9 +13,8 @@ function LandingPageContent() {
     <div className="flex min-h-screen flex-col bg-background">
       <LandingHeader />
       <main>
-        <HeroSection />
-        <PurposeBand />
-        <CapabilitiesGrid />
+      <HeroSection />
+      <CapabilitiesGrid />
         <WorkflowTimeline />
         <MobileAppSection />
         <CtaSection />
