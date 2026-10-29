@@ -1,116 +1,108 @@
 import { useState } from 'react'
 import { CheckCircle2, Loader2 } from 'lucide-react'
 import { Modal, Button } from '../ui'
-import { RegistrationStepper } from '../landing/registration'
 import {
-  DroneInfoStep,
-  RegistrationDetailsStep,
-  AssignmentStep,
-  ReviewStep,
-  EMPTY_REGISTRATION_DATA,
+  DroneDetailsStep,
+  emptyRegistrationData,
+  normalizeSerialNumber,
+  registrationDataFromDrone,
+  validateDetails,
 } from './registration'
 import type { DroneRegistrationData } from './registration'
+import type { Drone } from '../../types/drone'
 
-const STEP_LABELS = ['Drone Info', 'Registration', 'Operations', 'Review']
-const LAST_STEP = STEP_LABELS.length - 1
-
-export interface DroneRegistrationModalProps {
+export interface DroneFormModalProps {
   open: boolean
   onClose: () => void
+  /** The drone being edited; omitted to register a new one. */
+  drone?: Drone
+  /** Serial and registration numbers already taken in the agency, the edited drone's own excluded. */
   existingSerialNumbers: string[]
   existingRegistrationNumbers: string[]
-  onRegister: (data: DroneRegistrationData) => Promise<{ ok: boolean; error?: string }>
-}
-
-function validateDroneInfo(data: DroneRegistrationData): string | null {
-  if (!data.name.trim()) return 'Drone name is required.'
-  if (!data.manufacturer.trim()) return 'Manufacturer is required.'
-  if (!data.model.trim()) return 'Model is required.'
-  if (!data.droneType) return 'Drone type is required.'
-  return null
-}
-
-function validateRegistration(
-  data: DroneRegistrationData,
-  existingSerials: string[],
-  existingRegNums: string[],
-): string | null {
-  if (!data.serialNumber.trim()) return 'Serial number is required.'
-  if (existingSerials.includes(data.serialNumber.trim())) return 'This serial number is already registered.'
-  if (data.registrationNumber && existingRegNums.includes(data.registrationNumber.trim())) {
-    return 'This registration number is already in use.'
-  }
-  if (!data.dateAcquired) return 'Date acquired is required.'
-  return null
+  onSubmit: (data: DroneRegistrationData) => Promise<{ ok: boolean; error?: string }>
+  /** Called after an edit is saved (a registration shows its own success screen instead). */
+  onSaved?: (name: string) => void
 }
 
 /**
- * The four-step drone registration, in a window over the Drones page so
- * registering never takes the operator away from the fleet list. Mounted only
+ * Registers a drone, or edits one, in a window over the Drones page so the
+ * operator never leaves the fleet list. Registering asks for a small
+ * confirmation on top of the form; an edit saves straight away. Mounted only
  * while open (the parent renders it conditionally), so each opening starts
- * from step one with an empty form.
+ * from a fresh form.
  */
-export function DroneRegistrationModal({
+export function DroneFormModal({
   open,
   onClose,
+  drone,
   existingSerialNumbers,
   existingRegistrationNumbers,
-  onRegister,
-}: DroneRegistrationModalProps) {
-  const [step, setStep] = useState(0)
-  const [data, setData] = useState<DroneRegistrationData>(EMPTY_REGISTRATION_DATA)
+  onSubmit,
+  onSaved,
+}: DroneFormModalProps) {
+  const editing = !!drone
+  const [data, setData] = useState<DroneRegistrationData>(() =>
+    drone ? registrationDataFromDrone(drone) : emptyRegistrationData(),
+  )
   const [error, setError] = useState<string | null>(null)
+  const [showMore, setShowMore] = useState(false)
+  const [confirming, setConfirming] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [registeredName, setRegisteredName] = useState<string | null>(null)
 
   const patch = (change: Partial<DroneRegistrationData>) => setData((prev) => ({ ...prev, ...change }))
 
   function handleClose() {
-    // Closing mid-request would leave a registration finishing behind a form that is gone.
+    // Closing mid-request would leave a save finishing behind a form that is gone.
     if (submitting) return
+    // Escape reaches both dialogs; while confirming it should only dismiss the confirmation.
+    if (confirming) {
+      setConfirming(false)
+      return
+    }
     onClose()
   }
 
-  function next() {
-    const problem =
-      step === 0
-        ? validateDroneInfo(data)
-        : step === 1
-          ? validateRegistration(data, existingSerialNumbers, existingRegistrationNumbers)
-          : null
+  function cancelConfirm() {
+    if (!submitting) setConfirming(false)
+  }
+
+  function requestSubmit() {
+    const problem = validateDetails(data, existingSerialNumbers, existingRegistrationNumbers)
     if (problem) {
-      setError(problem)
+      setError(problem.message)
+      if (problem.inMore) setShowMore(true)
       return
     }
     setError(null)
-    setStep((s) => s + 1)
-  }
-
-  function back() {
-    setError(null)
-    setStep((s) => Math.max(0, s - 1))
+    if (editing) void submit()
+    else setConfirming(true)
   }
 
   async function submit() {
-    setError(null)
     setSubmitting(true)
-    const result = await onRegister(data)
+    const result = await onSubmit({
+      ...data,
+      name: data.name.trim(),
+      serialNumber: normalizeSerialNumber(data.serialNumber),
+    })
     setSubmitting(false)
+    setConfirming(false)
     if (!result.ok) {
-      setError(result.error || 'Failed to register drone. Please try again.')
+      setError(result.error || (editing ? 'Failed to save changes. Please try again.' : 'Failed to register drone. Please try again.'))
       return
     }
-    setRegisteredName(data.name)
+    if (editing) {
+      onSaved?.(data.name.trim())
+      onClose()
+    } else {
+      setRegisteredName(data.name.trim())
+    }
   }
 
   if (registeredName) {
     return (
-      <Modal
-        open={open}
-        onClose={onClose}
-        title="Drone Registered"
-        footer={<Button onClick={onClose}>Done</Button>}
-      >
+      <Modal open={open} onClose={onClose} title="Drone Registered" footer={<Button onClick={onClose}>Done</Button>}>
         <div className="flex flex-col items-center gap-3 py-4 text-center">
           <span className="flex size-14 items-center justify-center rounded-full bg-success-bg text-success-fg">
             <CheckCircle2 className="size-8" />
@@ -127,23 +119,60 @@ export function DroneRegistrationModal({
   }
 
   return (
-    <Modal
-      open={open}
-      onClose={handleClose}
-      title="Register New Drone"
-      className="max-w-2xl"
-      footer={
-        <>
-          {step > 0 ? (
-            <Button variant="outline" onClick={back} disabled={submitting}>
-              Previous
-            </Button>
-          ) : (
-            <Button variant="outline" onClick={handleClose}>
+    <>
+      <Modal
+        open={open}
+        onClose={handleClose}
+        title={editing ? `Edit ${drone.name}` : 'Register New Drone'}
+        className="max-w-lg"
+        footer={
+          <>
+            <Button variant="outline" onClick={handleClose} disabled={editing && submitting}>
               Cancel
             </Button>
-          )}
-          {step === LAST_STEP ? (
+            <Button onClick={requestSubmit} disabled={editing && submitting}>
+              {editing && submitting ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  Saving…
+                </>
+              ) : editing ? (
+                'Save Changes'
+              ) : (
+                'Register Drone'
+              )}
+            </Button>
+          </>
+        }
+      >
+        <div className="flex max-h-[70vh] flex-col gap-4 overflow-y-auto py-1">
+          <DroneDetailsStep
+            data={data}
+            onChange={patch}
+            existingSerialNumbers={existingSerialNumbers}
+            existingRegistrationNumbers={existingRegistrationNumbers}
+            showMore={showMore}
+            onShowMoreChange={setShowMore}
+            intro={editing ? undefined : 'A name and serial number are all you need to register a drone.'}
+          />
+
+          {error ? (
+            <div className="rounded-md bg-danger-subtle px-3 py-2 text-sm text-danger-fg" role="alert">
+              {error}
+            </div>
+          ) : null}
+        </div>
+      </Modal>
+
+      <Modal
+        open={confirming}
+        onClose={cancelConfirm}
+        title="Confirm Registration"
+        footer={
+          <>
+            <Button variant="outline" onClick={cancelConfirm} disabled={submitting}>
+              Back
+            </Button>
             <Button onClick={submit} disabled={submitting}>
               {submitting ? (
                 <>
@@ -151,36 +180,18 @@ export function DroneRegistrationModal({
                   Registering…
                 </>
               ) : (
-                'Register Drone'
+                'Confirm'
               )}
             </Button>
-          ) : (
-            <Button onClick={next}>Next</Button>
-          )}
-        </>
-      }
-    >
-      <div className="flex max-h-[75vh] flex-col gap-4 overflow-y-auto">
-        <RegistrationStepper currentStep={step} steps={STEP_LABELS} />
-
-        {step === 0 && <DroneInfoStep data={data} onChange={patch} />}
-        {step === 1 && (
-          <RegistrationDetailsStep
-            data={data}
-            onChange={patch}
-            existingSerialNumbers={existingSerialNumbers}
-            existingRegistrationNumbers={existingRegistrationNumbers}
-          />
-        )}
-        {step === 2 && <AssignmentStep data={data} onChange={patch} />}
-        {step === 3 && <ReviewStep data={data} />}
-
-        {error ? (
-          <div className="rounded-md bg-danger-subtle px-3 py-2 text-sm text-danger-fg" role="alert">
-            {error}
-          </div>
-        ) : null}
-      </div>
-    </Modal>
+          </>
+        }
+      >
+        <p>
+          Register <strong>{data.name.trim()}</strong> (serial{' '}
+          <span className="font-mono">{normalizeSerialNumber(data.serialNumber)}</span>) to your agency's fleet? You
+          can connect it from the drone list afterwards.
+        </p>
+      </Modal>
+    </>
   )
 }

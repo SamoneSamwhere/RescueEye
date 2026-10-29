@@ -1,4 +1,4 @@
-import { Loader2, Video, MonitorPlay } from 'lucide-react'
+import { Loader2, Video, MonitorPlay, Pencil, Trash2 } from 'lucide-react'
 import { Card, Button, StatusIndicator } from '../ui'
 import { DroneIllustration } from './DroneIllustration'
 import { formatDateTime } from '../../lib/formatDateTime'
@@ -12,7 +12,12 @@ interface DroneCardProps {
   onConnect: (droneId: string) => void
   onStartLiveFeed: (droneId: string) => void
   onViewLive: () => void
+  onEdit: (drone: Drone) => void
+  onRemove: (drone: Drone) => void
 }
+
+const ICON_BUTTON_CLASS =
+  'rounded-md p-1.5 text-foreground-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus'
 
 export function DroneCard({
   drone,
@@ -21,16 +26,39 @@ export function DroneCard({
   onConnect,
   onStartLiveFeed,
   onViewLive,
+  onEdit,
+  onRemove,
 }: DroneCardProps) {
   const isConnected = drone.connectionStatus === 'CONNECTED'
 
   return (
     <Card
       className={cn(
-        'flex flex-col items-center gap-3 p-4 text-center transition-all duration-300',
+        'relative flex flex-col items-center gap-3 p-4 text-center transition-all duration-300',
         'hover:-translate-y-1 hover:border-accent-border hover:shadow-modal',
       )}
     >
+      <div className="absolute right-2 top-2 flex gap-0.5">
+        <button
+          type="button"
+          onClick={() => onEdit(drone)}
+          aria-label={`Edit ${drone.name}`}
+          title="Edit"
+          className={cn(ICON_BUTTON_CLASS, 'hover:bg-surface-secondary hover:text-foreground')}
+        >
+          <Pencil className="size-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => onRemove(drone)}
+          aria-label={`Remove ${drone.name}`}
+          title="Remove"
+          className={cn(ICON_BUTTON_CLASS, 'hover:bg-danger-subtle hover:text-danger-fg')}
+        >
+          <Trash2 className="size-3.5" />
+        </button>
+      </div>
+
       <DroneIllustration active={isConnected} className="h-20 w-full" />
 
       <div className="flex flex-col items-center gap-1">

@@ -33,6 +33,21 @@ import { fetchSavedDetections, useDetectionPersistence } from './useDetectionPer
 /** Fallback operating area — only used the first time an agency captures media, before it has any detections of its own to center on. */
 const DEFAULT_AREA_CENTER: GeoPoint = { lat: 10.3155, lng: 123.895402 }
 
+/** What the drone form collects, for registering a drone or editing one. */
+export interface DroneDetailsInput {
+  name: string
+  manufacturer: string
+  model: string
+  droneType: string
+  serialNumber: string
+  registrationNumber?: string
+  dateAcquired: string
+  operationalStatus: string
+  assignedOperatorId?: string
+  lastInspectionDate?: string
+  notes?: string
+}
+
 interface CommandStaffDataContextValue {
   detections: Detection[]
   incidents: Incident[]
@@ -58,19 +73,10 @@ interface CommandStaffDataContextValue {
     fileName?: string,
     storedMediaId?: string,
   ) => Detection
-  registerDrone: (input: {
-    name: string
-    manufacturer: string
-    model: string
-    droneType: string
-    serialNumber: string
-    registrationNumber?: string
-    dateAcquired: string
-    operationalStatus: string
-    assignedOperatorId?: string
-    lastInspectionDate?: string
-    notes?: string
-  }) => Promise<{ ok: boolean; error?: string }>
+  registerDrone: (input: DroneDetailsInput) => Promise<{ ok: boolean; error?: string }>
+  updateDroneDetails: (droneId: string, input: DroneDetailsInput) => Promise<{ ok: boolean; error?: string }>
+  /** Refuses while the drone is streaming live. */
+  removeDrone: (droneId: string) => Promise<{ ok: boolean; error?: string }>
   connectDrone: (droneId: string) => Promise<void>
   startLiveFeed: (droneId: string) => void
   stopLiveFeed: (droneId: string) => void
@@ -152,8 +158,16 @@ export function CommandStaffDataProvider({ children }: { children: ReactNode }) 
       .catch((err: unknown) => console.warn('Could not load saved detections', err))
   }, [realAccount, agencyId, addMediaAsset, storeAddDetection])
   const { notifications: allNotifications, addNotification } = useNotificationStore()
-  const { liveDroneIds: allLiveDroneIds, startLiveFeed, stopLiveFeed } = useDroneStore()
-  const { getDronesByAgency, createDrone, updateDrone: updateDbDrone } = useDroneDatabase()
+  const {
+    drones: demoDrones,
+    addDrone: addDemoDrone,
+    updateDrone: updateDemoDrone,
+    removeDrone: removeDemoDrone,
+    liveDroneIds: allLiveDroneIds,
+    startLiveFeed,
+    stopLiveFeed,
+  } = useDroneStore()
+  const { getDronesByAgency, createDrone, updateDrone: updateDbDrone, deleteDrone } = useDroneDatabase()
   const toast = useToast()
   // Incidents saved to the database are only in memory where they were verified;
   // after a reload, missions (from the API) still point at them.
@@ -243,19 +257,25 @@ export function CommandStaffDataProvider({ children }: { children: ReactNode }) 
       }),
     [allNotifications, agencyId],
   )
-  // Only drones registered in the agency's registry (Supabase) — there is no
-  // session-only stand-in, so nothing unregistered can be connected.
-  const [drones, setDrones] = useState<Drone[]>([])
+  // A real agency sees only drones registered in its registry (Supabase) —
+  // there is no session-only stand-in, so nothing unregistered can be
+  // connected. Demo accounts have no registry rows, so their drones (seeded
+  // and newly registered) live in the app-wide drone store instead.
+  const [dbDrones, setDbDrones] = useState<Drone[]>([])
+  const drones = useMemo(
+    () => (realAccount ? dbDrones : demoDrones.filter((d) => d.agencyId === agencyId)),
+    [realAccount, dbDrones, demoDrones, agencyId],
+  )
 
   const refreshDrones = useCallback(async () => {
-    if (!agencyId) {
-      setDrones([])
+    if (!agencyId || !realAccount) {
+      setDbDrones([])
       return
     }
     const records = await getDronesByAgency(Number(agencyId))
-    setDrones(records.map(mapDroneRecordToDrone))
+    setDbDrones(records.map(mapDroneRecordToDrone))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agencyId])
+  }, [agencyId, realAccount])
 
   useEffect(() => {
     refreshDrones()
@@ -486,23 +506,39 @@ export function CommandStaffDataProvider({ children }: { children: ReactNode }) 
     updateIncident(incidentId, { status: 'CLOSED', closedByUserId: session.id, closedAt: now().toISOString() })
   }
 
-  async function registerDrone(input: {
-    name: string
-    manufacturer: string
-    model: string
-    droneType: string
-    serialNumber: string
-    registrationNumber?: string
-    dateAcquired: string
-    operationalStatus: string
-    assignedOperatorId?: string
-    lastInspectionDate?: string
-    notes?: string
-  }): Promise<{ ok: boolean; error?: string }> {
+  /** Another of the agency's drones already uses this serial (case-insensitive). */
+  function serialTaken(serialNumber: string, exceptDroneId?: string) {
+    const serial = serialNumber.trim().toUpperCase()
+    return drones.some((d) => d.id !== exceptDroneId && d.serialNumber.trim().toUpperCase() === serial)
+  }
+
+  async function registerDrone(input: DroneDetailsInput): Promise<{ ok: boolean; error?: string }> {
     if (!agencyId || !session) return { ok: false, error: 'No active session.' }
-    if (session.id.startsWith('usr-')) {
-      // Demo/mock accounts have no matching Supabase user row to attribute the drone to.
-      return { ok: false, error: 'Drone registration requires a real account — demo accounts cannot register drones.' }
+    if (serialTaken(input.serialNumber)) {
+      return { ok: false, error: 'This serial number is already registered.' }
+    }
+    if (!realAccount) {
+      // Demo accounts have no Supabase user row to attribute the drone to, so
+      // the drone is kept in memory for this session instead.
+      const nowIso = now().toISOString()
+      addDemoDrone({
+        id: generateId('drone'),
+        agencyId,
+        name: input.name,
+        model: input.model.trim(),
+        manufacturer: input.manufacturer.trim(),
+        droneType: input.droneType as Drone['droneType'],
+        serialNumber: input.serialNumber,
+        registrationNumber: input.registrationNumber,
+        assignedOperatorId: input.assignedOperatorId,
+        dateAcquired: input.dateAcquired,
+        operationalStatus: input.operationalStatus as Drone['operationalStatus'],
+        lastInspectionDate: input.lastInspectionDate,
+        notes: input.notes,
+        connectionStatus: 'DISCONNECTED',
+        registeredAt: nowIso,
+      })
+      return { ok: true }
     }
 
     const assignedOperatorId =
@@ -512,8 +548,8 @@ export function CommandStaffDataProvider({ children }: { children: ReactNode }) 
 
     const result = await createDrone({
       callsign: input.name,
-      manufacturer: input.manufacturer,
-      model: input.model,
+      manufacturer: input.manufacturer.trim(),
+      model: input.model.trim(),
       droneType: input.droneType as DroneRecord['droneType'],
       serialNumber: input.serialNumber,
       registrationNumber: input.registrationNumber,
@@ -526,12 +562,68 @@ export function CommandStaffDataProvider({ children }: { children: ReactNode }) 
       addedBy: Number(session.id),
     })
 
-    if (!result) return { ok: false, error: 'Failed to register drone. Please try again.' }
+    if (result.error) return { ok: false, error: result.error }
+    await refreshDrones()
+    return { ok: true }
+  }
+
+  async function updateDroneDetails(droneId: string, input: DroneDetailsInput): Promise<{ ok: boolean; error?: string }> {
+    if (!agencyId || !session) return { ok: false, error: 'No active session.' }
+    if (serialTaken(input.serialNumber, droneId)) {
+      return { ok: false, error: 'This serial number is already registered.' }
+    }
+    const details = {
+      model: input.model.trim(),
+      manufacturer: input.manufacturer.trim(),
+      droneType: input.droneType as Drone['droneType'],
+      serialNumber: input.serialNumber,
+      dateAcquired: input.dateAcquired,
+      operationalStatus: input.operationalStatus as Drone['operationalStatus'],
+    }
+    if (!realAccount) {
+      updateDemoDrone(droneId, {
+        ...details,
+        name: input.name,
+        registrationNumber: input.registrationNumber,
+        lastInspectionDate: input.lastInspectionDate,
+        notes: input.notes,
+      })
+      return { ok: true }
+    }
+
+    // Cleared optional fields are sent as null so the database forgets them.
+    const result = await updateDbDrone(Number(droneId), {
+      ...details,
+      callsign: input.name,
+      registrationNumber: input.registrationNumber?.trim() || null,
+      lastInspectionDate: input.lastInspectionDate || null,
+      notes: input.notes || null,
+    })
+    if (result.error) return { ok: false, error: result.error }
+    await refreshDrones()
+    return { ok: true }
+  }
+
+  async function removeDrone(droneId: string): Promise<{ ok: boolean; error?: string }> {
+    if (!agencyId || !session) return { ok: false, error: 'No active session.' }
+    if (allLiveDroneIds.includes(droneId)) {
+      return { ok: false, error: 'This drone is streaming live. Stop its feed in Live Monitoring first.' }
+    }
+    if (!realAccount) {
+      removeDemoDrone(droneId)
+      return { ok: true }
+    }
+    const result = await deleteDrone(Number(droneId))
+    if (result.error) return { ok: false, error: result.error }
     await refreshDrones()
     return { ok: true }
   }
 
   async function connectDrone(droneId: string) {
+    if (!realAccount) {
+      updateDemoDrone(droneId, { connectionStatus: 'CONNECTED', lastConnectedAt: now().toISOString() })
+      return
+    }
     if (!isDbId(droneId)) return
     await updateDbDrone(Number(droneId), { status: 'ACTIVE', lastFeedAt: new Date().toISOString() })
     await refreshDrones()
@@ -554,6 +646,8 @@ export function CommandStaffDataProvider({ children }: { children: ReactNode }) 
         closeIncident,
         captureMedia,
         registerDrone,
+        updateDroneDetails,
+        removeDrone,
         connectDrone,
         startLiveFeed,
         stopLiveFeed,
