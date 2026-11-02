@@ -118,6 +118,36 @@ STILLNESS_MAX_DRIFT    = float(os.getenv("STILLNESS_MAX_DRIFT", "0.03"))
 # Must outlast the window, or a track's history is pruned before it can be scored.
 STILLNESS_TRACK_TTL_S  = float(os.getenv("STILLNESS_TRACK_TTL_S", "90"))
 
+# Movement veto, over a short window rather than the stillness one.
+#
+# Stillness needs 15s of one unbroken track, and a person walking through a
+# close shot rarely gives that: at one /detect frame every 2.5-3s they move
+# far enough between frames that SORT starts a new track, so the window keeps
+# restarting and posture decides alone. Posture is exactly what fails on a
+# walker when the camera angle is assumed rather than reported - straight-down
+# foreshortening rules read a side-on walker's full torso as a body lying flat.
+#
+# So nobody is a casualty on first sight. A tracked person must be seen again
+# at least MOTION_MIN_SPAN_S later, and must not have moved more than
+# MOTION_MAX_BODY_PER_S of their own body length per second between the
+# sightings. Measuring in body lengths rather than pixels makes it hold at
+# any range: a walker covers ~0.75 body lengths a second whether they fill
+# the frame or are 40px tall. A real casualty pays one extra frame (~3s);
+# a walker whose track keeps restarting is never confirmed at all.
+#
+# The limit is loose on purpose. Camera compensation is a partial affine, which
+# cannot model the perspective change of a tilted camera climbing or orbiting,
+# and at the /detect cadence that residual is the same size as a slow walk:
+# measured on the rescue-patrol clip, a body lying still read 0.25-0.31 body
+# lengths/s while the drone climbed away from it. 1.0 still stops a walking
+# or running track; the posture classifier is what separates slow walkers.
+MOTION_WINDOW_S        = float(os.getenv("MOTION_WINDOW_S", "8"))
+MOTION_MIN_SPAN_S      = float(os.getenv("MOTION_MIN_SPAN_S", "1.0"))
+MOTION_MAX_BODY_PER_S  = float(os.getenv("MOTION_MAX_BODY_PER_S", "1.0"))
+# A stillness window that was measured and says "moving" vetoes as well:
+# drifting this far over 15-30s is someone walking, crawling off or being carried.
+STILLNESS_VETO_BELOW   = float(os.getenv("STILLNESS_VETO_BELOW", "0.3"))
+
 # Fusion weights, used when both signals are available.
 POSTURE_WEIGHT   = float(os.getenv("POSTURE_WEIGHT", "0.6"))
 STILLNESS_WEIGHT = float(os.getenv("STILLNESS_WEIGHT", "0.4"))
@@ -290,7 +320,7 @@ class _TrackHistory:
     # warped forward by the camera transform each frame, so the series
     # describes motion of the subject over the ground rather than across the
     # sensor.
-    points: list = field(default_factory=list)  # (t, x, y)
+    points: list = field(default_factory=list)  # (t, x, y, body length px)
     last_seen: float = 0.0
     compensated: bool = True
 
@@ -321,7 +351,7 @@ class StillnessMonitor:
         with self._lock:
             for hist in self._tracks.values():
                 if motion.ok:
-                    hist.points = [(t, *motion.apply(x, y, cx, cy)) for (t, x, y) in hist.points]
+                    hist.points = [(t, *motion.apply(x, y, cx, cy), size) for (t, x, y, size) in hist.points]
                 else:
                     hist.compensated = False
             stale = [tid for tid, hist in self._tracks.items()
@@ -340,10 +370,11 @@ class StillnessMonitor:
         now = time.monotonic()
         cx = float(bbox.get("x", 0)) + float(bbox.get("w", 0)) / 2.0
         cy = float(bbox.get("y", 0)) + float(bbox.get("h", 0)) / 2.0
+        size = max(1.0, float(bbox.get("w", 0)), float(bbox.get("h", 0)))
 
         with self._lock:
             hist = self._tracks.setdefault(track_id, _TrackHistory())
-            hist.points.append((now, cx, cy))
+            hist.points.append((now, cx, cy, size))
             hist.last_seen = now
             hist.points = [p for p in hist.points if now - p[0] <= STILLNESS_WINDOW_S]
             points = list(hist.points)
@@ -373,6 +404,30 @@ class StillnessMonitor:
         drift = float(np.max(np.hypot(xs - np.median(xs), ys - np.median(ys))))
         diag = math.hypot(float(frame_shape[1]), float(frame_shape[0])) or 1.0
         return 1.0 - _clamp01((drift / diag) / STILLNESS_MAX_DRIFT), "stillness_measured"
+
+    def recent_motion(self, track_id: int) -> float | None:
+        """
+        How fast this track moved over the last MOTION_WINDOW_S, in its own body
+        lengths per second. None when it has not been seen twice far enough
+        apart yet (or the camera motion was lost), i.e. not measured.
+
+        Call after `update` for the same frame.
+        """
+        with self._lock:
+            hist = self._tracks.get(track_id)
+            if hist is None or not hist.points:
+                return None
+            now = hist.points[-1][0]
+            points = [p for p in hist.points if now - p[0] <= MOTION_WINDOW_S]
+        if len(points) < 2:
+            return None
+        first, last = points[0], points[-1]
+        span = last[0] - first[0]
+        if span < MOTION_MIN_SPAN_S:
+            return None
+        body = float(np.median([p[3] for p in points]))
+        dist = math.hypot(last[1] - first[1], last[2] - first[2])
+        return (dist / body) / span
 
 
 _monitor = StillnessMonitor()
@@ -437,9 +492,12 @@ def judge(detection: dict, keypoints, frame_shape,
     verdict.reasons.append(posture_reason)
 
     stillness, stillness_reason = (None, "stillness_untracked")
+    motion = None
     track_id = detection.get("track_id")
     if track_id is not None:
-        stillness, stillness_reason = (monitor or _monitor).update(int(track_id), bbox, frame_shape)
+        mon = monitor or _monitor
+        stillness, stillness_reason = mon.update(int(track_id), bbox, frame_shape)
+        motion = mon.recent_motion(int(track_id))
     verdict.stillness = stillness
     verdict.reasons.append(stillness_reason)
 
@@ -460,7 +518,25 @@ def judge(detection: dict, keypoints, frame_shape,
     qualifying = posture_trusted or stillness is not None
     if not qualifying:
         verdict.reasons.append("no_qualifying_signal")
-    verdict.is_casualty = qualifying and verdict.score >= CASUALTY_MIN_SCORE
+
+    # Movement vetoes everything above (see MOTION_MAX_BODY_PER_S). Untracked
+    # detections - a single photo - have no second sighting to wait for, and
+    # are judged on posture as before.
+    confirmed = True
+    if track_id is not None:
+        if motion is None:
+            verdict.reasons.append("awaiting_second_sighting")
+            confirmed = False
+        elif motion > MOTION_MAX_BODY_PER_S:
+            verdict.reasons.append("moving")
+            confirmed = False
+        else:
+            verdict.reasons.append("not_moving")
+    if stillness is not None and stillness < STILLNESS_VETO_BELOW:
+        verdict.reasons.append("moved_over_window")
+        confirmed = False
+
+    verdict.is_casualty = qualifying and confirmed and verdict.score >= CASUALTY_MIN_SCORE
     return verdict
 
 

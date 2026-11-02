@@ -100,6 +100,8 @@ def shutdown():
 def _mjpeg_generator(feed_id: str):
     boundary = f"--rescueeye_{feed_id}\r\n".encode()
     last_seq = 0
+    last_sent = 0.0
+    min_gap = 1.0 / registry.MJPEG_MAX_FPS if registry.MJPEG_MAX_FPS > 0 else 0.0
     while True:
         try:
             feed = registry.get_feed(feed_id)
@@ -115,7 +117,17 @@ def _mjpeg_generator(feed_id: str):
         frame, seq = feed.wait_for_frame(last_seq)
         if frame is None or seq == last_seq:
             continue                      # timed out - re-check the feed exists
+        # Cap what each viewer is sent (see feed_registry.MJPEG_MAX_FPS): a frame
+        # arriving sooner than that after the last one sent is skipped, and the
+        # next newer frame goes instead, so the view never falls behind.
+        now = time.monotonic()
+        if now - last_sent < min_gap:
+            time.sleep(min_gap - (now - last_sent))
+            frame, seq = feed.wait_for_frame(last_seq, timeout=0)
+            if frame is None:
+                continue
         last_seq = seq
+        last_sent = time.monotonic()
         # Converted on the feed, so every viewer of this feed shares one
         # conversion per frame instead of repeating it per connection.
         display = feed.display_jpeg() or frame
@@ -357,6 +369,18 @@ async def delete_feed(feed_id: str):
     return {"ok": True, "removed": feed_id, "count": registry.count()}
 
 
+@router.patch("/feeds/{feed_id}")
+async def update_feed(feed_id: str, payload: dict = Body(...)):
+    """Operator settings for a feed. Today only `cameraView`: "down" | "angled"."""
+    try:
+        feed = registry.set_camera_view(feed_id, str(payload.get("cameraView", "")))
+    except FeedNotFound:
+        raise HTTPException(404, f"No such feed '{feed_id}'")
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return feed.to_dict()
+
+
 @router.get("/feeds/{feed_id}/mjpeg")
 async def stream_feed(feed_id: str):
     try:
@@ -410,7 +434,8 @@ async def feed_snapshot(feed_id: str):
     if frame is None:
         return Response(status_code=503, content="No frame available yet")
     try:
-        return Response(content=_downscale_jpeg(frame), media_type="image/jpeg")
+        # A still someone may save or review: kept sharper than the live view.
+        return Response(content=_downscale_jpeg(frame, max_width=1280, quality=85), media_type="image/jpeg")
     except Exception:
         return Response(content=frame, media_type="image/jpeg")
 

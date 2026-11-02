@@ -3,9 +3,9 @@ import { Building2, Camera, Film, Flame, RefreshCw, Scan, ShieldCheck, Waves, X,
 import { Panel, Button, Badge } from '../ui'
 import { cn } from '../../lib/cn'
 import { SCENE_DAMAGE_LABEL } from '../../lib/labels'
-import { feedMjpegUrl, useFeedDetection } from '../../features/media/useFeeds'
+import { feedMjpegUrl, useFeedDetection, useSetCameraView } from '../../features/media/useFeeds'
 import { useDronePositions } from '../../features/media/useDronePositions'
-import type { DetectionBox, Feed, SceneLabel } from '../../features/media/useFeeds'
+import type { CameraView, DetectionBox, Feed, SceneLabel } from '../../features/media/useFeeds'
 
 export interface LiveFeedPanelProps {
   feed: Feed
@@ -239,6 +239,7 @@ export function LiveFeedPanel({
             {feed.kind === 'upload' ? 'Recorded' : feed.kind === 'live' ? 'Live source' : 'Synthetic'}
           </Badge>
           {feed.droneId ? <DroneLocationBadge droneId={feed.droneId} /> : null}
+          <CameraViewToggle feed={feed} />
           {detection.modelVersion ? (
             <span className={cn('text-xs', detection.modelVersion === 'custom_v1' ? 'text-foreground-muted' : 'text-warning')}>
               model: {detection.modelVersion}
@@ -250,6 +251,52 @@ export function LiveFeedPanel({
   )
 }
 
+
+const CAMERA_VIEWS: { value: CameraView; label: string; hint: string }[] = [
+  { value: 'down', label: 'Straight down', hint: 'Camera pointing at the ground below the drone' },
+  { value: 'angled', label: 'Angled', hint: 'Camera tilted forward, looking across the scene' },
+]
+
+/**
+ * Which way the camera points. The AI tells a body lying on the ground from a
+ * person walking by the shape of the torso, and that shape means opposite
+ * things looking straight down and looking across. DJI Fly does not send the
+ * gimbal angle, so without this every feed is judged as straight down and
+ * walkers in angled shots are flagged as casualties. Drone telemetry, when
+ * present, overrides it server-side.
+ */
+function CameraViewToggle({ feed }: { feed: Feed }) {
+  const setView = useSetCameraView()
+  const current = setView.isPending ? setView.variables?.cameraView : (feed.cameraView ?? 'down')
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Camera angle"
+      title="Which way the drone camera points. The AI judges casualties differently for each."
+      className="flex items-center gap-1 rounded-md border border-border p-0.5 text-xs"
+    >
+      <span className="px-1.5 text-foreground-muted">Camera</span>
+      {CAMERA_VIEWS.map((v) => (
+        <button
+          key={v.value}
+          type="button"
+          role="radio"
+          aria-checked={current === v.value}
+          title={v.hint}
+          disabled={setView.isPending}
+          onClick={() => setView.mutate({ feedId: feed.id, cameraView: v.value })}
+          className={cn(
+            'rounded-sm px-2 py-1 font-medium transition-colors',
+            current === v.value ? 'bg-accent text-foreground-inverse' : 'text-foreground hover:bg-surface-secondary',
+          )}
+        >
+          {v.label}
+        </button>
+      ))}
+      {setView.isError ? <span className="px-1 text-danger">Not saved</span> : null}
+    </div>
+  )
+}
 
 /**
  * Where this feed's drone is believed to be, and how well. A casualty spotted

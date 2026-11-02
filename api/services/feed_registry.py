@@ -21,6 +21,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import numpy as np
 from PIL import Image
 
 logger = logging.getLogger("rescueeye.feeds")
@@ -148,28 +149,36 @@ def _build_ffmpeg_cmd(source: str, fps: float) -> list[str]:
     return cmd
 
 
-def _downscale_jpeg(jpeg: bytes, w: int = 1280, h: int = 720) -> bytes:
-    """
-    Fit a frame inside w x h for the browser, re-encoding only if it must.
+# What the browser is sent, separately from what the AI analyses. The live view
+# leaves the laptop through the Cloudflare tunnel, once per viewer: at the
+# capture settings (1280 px, q6, 30 fps) that measured ~22 Mbit/s each, more
+# than a typical upload link carries, which is why the view stuttered once
+# deployed and was smooth on localhost. 960 px at quality 65 and 15 fps is
+# ~7 Mbit/s and still sharp at panel size. /detect and the snapshot endpoint
+# keep reading the full frame, so detection accuracy is untouched.
+DISPLAY_MAX_WIDTH    = int(os.getenv("DISPLAY_MAX_WIDTH", "960"))
+DISPLAY_JPEG_QUALITY = int(os.getenv("DISPLAY_JPEG_QUALITY", "65"))
+MJPEG_MAX_FPS        = float(os.getenv("MJPEG_MAX_FPS", "15"))
 
-    The old version decoded and re-encoded unconditionally. When the producer
-    already emits frames at or below the display size that is a full JPEG
-    decode plus encode per frame per viewer, spent to produce a picture the
-    same size as the input and slightly worse, because re-encoding is lossy.
-    Reading the header is enough to find that out, and Image.open does not
-    decode pixels until they are asked for.
 
-    The fit also preserves aspect ratio now; the fixed resize stretched any
-    source that was not exactly 16:9.
+def _downscale_jpeg(jpeg: bytes, max_width: int | None = None, quality: int | None = None) -> bytes:
     """
-    src = Image.open(io.BytesIO(jpeg))
-    if src.width <= w and src.height <= h:
-        return jpeg                      # already small enough - hand it back untouched
-    scale = min(w / src.width, h / src.height)
-    size = (max(1, round(src.width * scale)), max(1, round(src.height * scale)))
-    buf = io.BytesIO()
-    src.resize(size, Image.BILINEAR).save(buf, format="JPEG", quality=78)
-    return buf.getvalue()
+    The browser copy of a frame: at most `max_width` wide (aspect kept), at the
+    display JPEG quality. Re-encoded even when no resize is needed, because the
+    capture quality is far higher than a viewer needs and the bytes are what
+    cost frames over the tunnel.
+    """
+    import cv2
+    max_width = max_width or DISPLAY_MAX_WIDTH
+    quality = quality or DISPLAY_JPEG_QUALITY
+    img = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
+    if img is None:
+        return jpeg
+    h, w = img.shape[:2]
+    if w > max_width:
+        img = cv2.resize(img, (max_width, max(1, round(h * max_width / w))), interpolation=cv2.INTER_AREA)
+    ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, quality])
+    return buf.tobytes() if ok and len(buf) < len(jpeg) else jpeg
 
 
 @dataclass
@@ -199,6 +208,11 @@ class Feed:
     # Set for a feed opened automatically when a drone started publishing to
     # the always-on ingest server (services/drone_ingest.py), e.g. "live/drone1".
     ingest_path: str | None = None
+    # Which way the camera points, set by the operator: "down" (nadir) or
+    # "angled". The casualty gate measures posture differently for each, and
+    # DJI Fly's RTMP stream does not carry the gimbal angle. Telemetry, when a
+    # drone sends it, overrides this.
+    camera_view: str = "down"
 
     def snapshot(self) -> bytes | None:
         with self.lock:
@@ -263,6 +277,7 @@ class Feed:
             "createdAt": self.created_at,
             "ingestPath": self.ingest_path,
             "droneId":   self.drone_id,
+            "cameraView": self.camera_view,
         }
 
 
@@ -396,6 +411,8 @@ def add_feed(source: str, label: str | None = None, kind: str = "live",
             kind=kind,
             ingest_path=ingest_path,
         )
+        if feed.drone_id in _camera_view_by_drone:
+            feed.camera_view = _camera_view_by_drone[feed.drone_id]
         _registry[feed_id] = feed
 
     _start_producer(feed)
@@ -415,6 +432,22 @@ def remove_feed(feed_id: str) -> None:
         except Exception:
             pass
     logger.info(f"[feed:{feed.id}] removed")
+
+
+CAMERA_VIEWS = ("down", "angled")
+# Remembered per drone, so a drone that drops and reconnects - which opens a
+# new feed - keeps the angle the operator chose.
+_camera_view_by_drone: dict[str, str] = {}
+
+
+def set_camera_view(feed_id: str, view: str) -> Feed:
+    if view not in CAMERA_VIEWS:
+        raise ValueError(f"camera view must be one of {CAMERA_VIEWS}")
+    feed = get_feed(feed_id)
+    feed.camera_view = view
+    if feed.drone_id:
+        _camera_view_by_drone[feed.drone_id] = view
+    return feed
 
 
 def get_feed(feed_id: str) -> Feed:

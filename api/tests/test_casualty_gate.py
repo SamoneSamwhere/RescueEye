@@ -49,6 +49,18 @@ def _box_for(*points, pad=40):
             "w": (max(xs) - min(xs)) + 2 * pad, "h": (max(ys) - min(ys)) + 2 * pad}
 
 
+def _judge_twice(monkeypatch, det, kps, gap=1.5):
+    """
+    Judge the same still body on two consecutive /detect calls. A body has to be
+    seen twice before it can be confirmed, so first-frame tests go through here.
+    """
+    clock = [1000.0]
+    monkeypatch.setattr(casualty.time, "monotonic", lambda: clock[0])
+    casualty.judge(dict(det), kps, FRAME)
+    clock[0] += gap
+    return casualty.judge(dict(det), kps, FRAME)
+
+
 @pytest.fixture(autouse=True)
 def _clean():
     casualty.reset()
@@ -198,21 +210,21 @@ def test_person_at_a_responder_position_is_never_a_casualty():
     assert verdict.reasons == ["known_responder"]
 
 
-def test_responder_veto_is_bounded_by_distance():
+def test_responder_veto_is_bounded_by_distance(monkeypatch):
     responder_registry.report("user-5", 10.3157, 123.8854)
     # ~500m away: a different person entirely.
     det = {"bbox": _box_for((100, 200), (260, 205)), "lat": 10.3202, "lng": 123.8854,
            "track_id": 1, "subject_located": True}
-    verdict = casualty.judge(det, _kps((100, 200), (260, 205)), FRAME)
+    verdict = _judge_twice(monkeypatch, det, _kps((100, 200), (260, 205)))
     assert verdict.responder == ""
     assert verdict.is_casualty is True
 
 
 # ── Fusion ────────────────────────────────────────────────────────────────────
 
-def test_prone_body_is_promoted_on_posture_alone():
+def test_prone_body_is_promoted_on_posture_alone(monkeypatch):
     det = {"bbox": _box_for((100, 200), (260, 205)), "track_id": 1}
-    verdict = casualty.judge(det, _kps((100, 200), (260, 205)), FRAME)
+    verdict = _judge_twice(monkeypatch, det, _kps((100, 200), (260, 205)))
     assert verdict.is_casualty is True
     assert verdict.posture == 1.0
     assert "posture_from_pose" in verdict.reasons
@@ -366,7 +378,7 @@ def test_track_history_outlives_the_window():
     assert casualty.STILLNESS_TRACK_TTL_S > casualty.STILLNESS_WINDOW_S
 
 
-def test_veto_does_not_fire_on_a_drone_position():
+def test_veto_does_not_fire_on_a_drone_position(monkeypatch):
     """
     Safety rule. Without per-subject georeferencing every detection in a frame
     carries the aircraft's coordinate, so a drone hovering near one rescuer
@@ -377,7 +389,7 @@ def test_veto_does_not_fire_on_a_drone_position():
     responder_registry.report("user-5", 10.3157, 123.8854, name="Casey Nolan")
     det = {"bbox": _box_for((100, 200), (260, 205)), "lat": 10.3157, "lng": 123.8854,
            "track_id": 1, "subject_located": False}
-    verdict = casualty.judge(det, _kps((100, 200), (260, 205)), FRAME)
+    verdict = _judge_twice(monkeypatch, det, _kps((100, 200), (260, 205)))
     assert verdict.is_casualty is True
     assert verdict.responder == ""
     assert "responder_veto_unavailable_no_subject_position" in verdict.reasons
@@ -441,3 +453,34 @@ def test_box_shape_plus_measured_stillness_can_promote(monkeypatch):
         time.sleep(0.03)
     assert verdict.stillness is not None
     assert "no_qualifying_signal" not in verdict.reasons
+
+
+# ── Walkers in close oblique shots ────────────────────────────────────────────
+
+def test_first_sighting_alone_is_not_a_casualty():
+    """One frame cannot tell a body on the ground from someone mid-stride."""
+    det = {"bbox": _box_for((100, 200), (260, 205)), "track_id": 1}
+    verdict = casualty.judge(det, _kps((100, 200), (260, 205)), FRAME)
+    assert verdict.is_casualty is False
+    assert "awaiting_second_sighting" in verdict.reasons
+
+
+def test_walker_that_reads_as_lying_is_vetoed_by_motion(monkeypatch):
+    """
+    Close oblique footage with no gimbal telemetry is judged as nadir, where a
+    walker's torso can read as horizontal. Two body lengths in 1.5 s is not
+    something a casualty does.
+    """
+    clock = [1000.0]
+    monkeypatch.setattr(casualty.time, "monotonic", lambda: clock[0])
+    kps = _kps((100, 200), (260, 205))
+    box = _box_for((100, 200), (260, 205))
+    casualty.judge({"bbox": dict(box), "track_id": 1}, kps, FRAME)
+    clock[0] += 1.5
+    moved = dict(box, x=box["x"] + 2 * box["w"])
+    shifted = kps.copy()
+    shifted[:, 0] += 2 * box["w"]
+    verdict = casualty.judge({"bbox": moved, "track_id": 1}, shifted, FRAME)
+    assert verdict.is_casualty is False
+    assert "moving" in verdict.reasons
+

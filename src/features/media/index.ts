@@ -15,8 +15,9 @@ export {
   useAddFeed,
   usePublishTarget,
   useCloseFeed,
+  useSetCameraView,
   useFeedDetection,
   feedMjpegUrl,
   feedSnapshotUrl,
 } from './useFeeds'
-export type { Feed, DetectionBox, DetectionState, PublishTarget } from './useFeeds'
+export type { Feed, CameraView, DetectionBox, DetectionState, PublishTarget } from './useFeeds'

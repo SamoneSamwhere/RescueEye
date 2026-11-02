@@ -858,6 +858,29 @@ def stream_state(key: str | None) -> StreamState:
 
 
 DEFAULT_GIMBAL_PITCH_DEG = float(os.getenv("GIMBAL_PITCH_DEG", "-90"))
+# Pitch assumed for a feed the operator marked "angled". Anything shallower than
+# casualty.POSTURE_NADIR_PITCH_DEG selects the side-on posture rule; -35 is a
+# typical DJI Fly forward-looking survey angle.
+ANGLED_GIMBAL_PITCH_DEG = float(os.getenv("ANGLED_GIMBAL_PITCH_DEG", "-35"))
+
+
+def _camera_pitch(stream_key: str | None, location) -> float:
+    """
+    Camera pitch for the casualty gate: the drone's own telemetry when it sends
+    one, else the operator's "down"/"angled" choice for the feed, else the
+    default. Getting this wrong is what made walkers casualties: oblique footage
+    judged with the straight-down rule reads a walker's full torso as a body
+    lying flat.
+    """
+    if location and location.gimbal_pitch_deg is not None:
+        return location.gimbal_pitch_deg
+    if stream_key:
+        try:
+            if feed_registry.get_feed(stream_key).camera_view == "angled":
+                return ANGLED_GIMBAL_PITCH_DEG
+        except feed_registry.FeedNotFound:
+            pass
+    return DEFAULT_GIMBAL_PITCH_DEG
 
 
 def _drone_location(stream_key: str | None) -> drone_locations.DroneLocation | None:
@@ -976,8 +999,7 @@ def _analyse(jpeg: bytes, stream: StreamState, want_annotation: bool,
         # happened — the responder veto below must not act on a position that
         # is really the aircraft's, or a drone hovering near one rescuer would
         # suppress every casualty in the frame.
-        pitch_deg = (location.gimbal_pitch_deg
-                     if location and location.gimbal_pitch_deg is not None else DEFAULT_GIMBAL_PITCH_DEG)
+        pitch_deg = _camera_pitch(stream.key, location)
         annotated = []
         for i, d in enumerate(detections):
             # Placing a subject within the frame needs the aircraft's own GPS

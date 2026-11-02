@@ -221,3 +221,53 @@ def test_detect_interval_scales_with_feed_count_and_is_capped():
     # near a single pass (~190ms) or the overlay visibly trails the video.
     assert base <= 500, "base cadence too slow — the box will lag the casualty"
     assert registry.detect_interval_ms() <= cap
+
+
+# ── Camera view (which posture rule the casualty gate uses) ───────────────────
+
+def test_camera_view_defaults_down_and_can_be_set(client):
+    feed = registry.add_feed(source="", label="A").to_dict()
+    assert feed["cameraView"] == "down"
+    r = client.patch(f"/stream/feeds/{feed['id']}", json={"cameraView": "angled"})
+    assert r.status_code == 200
+    assert r.json()["cameraView"] == "angled"
+    assert client.patch(f"/stream/feeds/{feed['id']}", json={"cameraView": "sideways"}).status_code == 400
+    assert client.patch("/stream/feeds/nope", json={"cameraView": "down"}).status_code == 404
+
+
+def test_camera_view_survives_a_drone_reconnecting(empty_registry):
+    first = registry.add_feed(source="", label="x", ingest_path="live/alpha-1")
+    registry.set_camera_view(first.id, "angled")
+    registry.remove_feed(first.id)
+    again = registry.add_feed(source="", label="x", ingest_path="live/alpha-1")
+    assert again.camera_view == "angled"
+
+
+def test_angled_feed_selects_the_side_on_posture_rule(empty_registry):
+    from routers import detect
+    from services import casualty
+    feed = registry.add_feed(source="", label="x")
+    assert detect._camera_pitch(feed.id, None) <= -casualty.POSTURE_NADIR_PITCH_DEG
+    registry.set_camera_view(feed.id, "angled")
+    assert detect._camera_pitch(feed.id, None) > -casualty.POSTURE_NADIR_PITCH_DEG
+
+
+def test_drone_telemetry_overrides_the_operator_choice(empty_registry):
+    from types import SimpleNamespace
+    from routers import detect
+    feed = registry.add_feed(source="", label="x")
+    registry.set_camera_view(feed.id, "angled")
+    assert detect._camera_pitch(feed.id, SimpleNamespace(gimbal_pitch_deg=-88.0)) == -88.0
+
+
+def test_browser_copy_is_smaller_than_the_frame_the_ai_reads():
+    """The live view is what crosses the tunnel; /detect keeps the full frame."""
+    import cv2
+    import numpy as np
+    from services.feed_registry import DISPLAY_MAX_WIDTH, _downscale_jpeg
+    rng = np.random.default_rng(0)
+    frame = cv2.GaussianBlur(rng.integers(0, 255, (720, 1280, 3), dtype=np.uint8), (5, 5), 0)
+    full = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 95])[1].tobytes()
+    shown = _downscale_jpeg(full)
+    assert cv2.imdecode(np.frombuffer(shown, np.uint8), cv2.IMREAD_COLOR).shape[1] == DISPLAY_MAX_WIDTH
+    assert len(shown) < len(full) / 2

@@ -81,6 +81,11 @@ def prone_victim(monkeypatch):
         detect, "_run_victim",
         lambda frame: ([{"class": "person", "confidence": 0.9, "bbox": bbox}], 5.0, [pose]),
     )
+    # A body already seen lying still on an earlier pass: these tests are about
+    # endpoint mechanics, and the second-sighting rule is pinned in
+    # test_casualty_gate.py.
+    from services import casualty
+    monkeypatch.setattr(casualty.StillnessMonitor, "recent_motion", lambda self, track_id: 0.0)
     return bbox
 
 

@@ -27,7 +27,14 @@ export interface Feed {
   ingestPath?: string | null
   /** Which drone this feed shows, for looking up its position; null for recordings. */
   droneId?: string | null
+  /**
+   * Which way the camera points. The casualty gate judges posture differently
+   * for each, and DJI Fly does not send the gimbal angle, so the operator says.
+   */
+  cameraView?: CameraView
 }
+
+export type CameraView = 'down' | 'angled'
 
 interface FeedListResponse {
   feeds: Feed[]
@@ -140,6 +147,18 @@ export function useCloseFeed() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (feedId: string) => api.delete<{ ok: boolean }>(`/stream/feeds/${feedId}`),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: [FEEDS_KEY] })
+    },
+  })
+}
+
+/** Tells the casualty gate which way this feed's camera points. */
+export function useSetCameraView() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { feedId: string; cameraView: CameraView }) =>
+      api.patch<Feed>(`/stream/feeds/${input.feedId}`, { cameraView: input.cameraView }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: [FEEDS_KEY] })
     },
