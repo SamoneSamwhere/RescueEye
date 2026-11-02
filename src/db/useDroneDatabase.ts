@@ -24,6 +24,9 @@ export interface DroneRecord {
   updatedAt: string
 }
 
+/** A write that failed carries its reason as a sentence the form can show (see handleDatabaseError). */
+export type DbResult<T> = { data: T; error: null } | { data: null; error: string }
+
 export function useDroneDatabase() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -148,7 +151,7 @@ export function useDroneDatabase() {
     assignedOperatorId?: number
     agencyId: number
     addedBy: number
-  }): Promise<DroneRecord | null> => {
+  }): Promise<DbResult<DroneRecord>> => {
     setIsLoading(true)
     setError(null)
 
@@ -195,11 +198,11 @@ export function useDroneDatabase() {
         throw dbError
       }
 
-      return data
+      return { data, error: null }
     } catch (err) {
       const errorMsg = handleDatabaseError(err)
       setError(errorMsg)
-      return null
+      return { data: null, error: errorMsg }
     } finally {
       setIsLoading(false)
     }
@@ -211,7 +214,7 @@ export function useDroneDatabase() {
   const updateDrone = async (
     droneId: number,
     updates: Partial<DroneRecord>,
-  ): Promise<DroneRecord | null> => {
+  ): Promise<DbResult<DroneRecord>> => {
     setIsLoading(true)
     setError(null)
 
@@ -227,35 +230,39 @@ export function useDroneDatabase() {
         throw dbError
       }
 
-      return data
+      return { data, error: null }
     } catch (err) {
       const errorMsg = handleDatabaseError(err)
       setError(errorMsg)
-      return null
+      return { data: null, error: errorMsg }
     } finally {
       setIsLoading(false)
     }
   }
 
   /**
-   * Delete a drone
+   * Delete a drone. Its detections stay, unlinked (detection.droneId is set to NULL, see migration 09).
    */
-  const deleteDrone = async (droneId: number): Promise<boolean> => {
+  const deleteDrone = async (droneId: number): Promise<DbResult<true>> => {
     setIsLoading(true)
     setError(null)
 
     try {
-      const { error: dbError } = await supabase.from('drone').delete().eq('id', droneId)
+      const { data, error: dbError } = await supabase.from('drone').delete().eq('id', droneId).select('id')
 
       if (dbError) {
         throw dbError
       }
+      // Row-level security hides rows rather than refusing, so a blocked delete "succeeds" on nothing.
+      if (!data || data.length === 0) {
+        throw new Error("This drone couldn't be removed. It may already be gone, or you may not have permission.")
+      }
 
-      return true
+      return { data: true, error: null }
     } catch (err) {
       const errorMsg = handleDatabaseError(err)
       setError(errorMsg)
-      return false
+      return { data: null, error: errorMsg }
     } finally {
       setIsLoading(false)
     }

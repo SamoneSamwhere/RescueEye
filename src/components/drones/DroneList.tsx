@@ -10,6 +10,8 @@ interface DroneListProps {
   onConnect: (droneId: string) => void
   onStartLiveFeed: (droneId: string) => void
   onViewLive: () => void
+  onEdit: (drone: Drone) => void
+  onRemove: (drone: Drone) => void
   onRegisterClick: () => void
 }
 
@@ -20,6 +22,8 @@ export function DroneList({
   onConnect,
   onStartLiveFeed,
   onViewLive,
+  onEdit,
+  onRemove,
   onRegisterClick,
 }: DroneListProps) {
   return (
@@ -53,6 +57,8 @@ export function DroneList({
               onConnect={onConnect}
               onStartLiveFeed={onStartLiveFeed}
               onViewLive={onViewLive}
+              onEdit={onEdit}
+              onRemove={onRemove}
             />
           ))}
         </div>

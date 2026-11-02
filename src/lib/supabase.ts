@@ -53,8 +53,9 @@ export function handleDatabaseError(error: unknown): string {
   const { message, code, text } = errorText(error)
 
   if (code === '23505' || text.includes('duplicate key')) {
-    if (text.includes('serial_number')) return 'This serial number is already registered.'
-    if (text.includes('registration_number')) return 'This registration number is already in use.'
+    // Constraint names are camelCase in this schema (drone_serialNumber_key).
+    if (/serial_?number/i.test(text)) return 'This serial number is already registered.'
+    if (/registration_?number/i.test(text)) return 'This registration number is already in use.'
     if (/email/i.test(text)) return 'An account with this email address already exists.'
     return 'This record already exists.'
   }
@@ -63,6 +64,9 @@ export function handleDatabaseError(error: unknown): string {
   }
   if (code === 'PGRST301' || /jwt/i.test(text)) {
     return 'Your session has expired. Sign in again and retry.'
+  }
+  if (code === '23514' && text.includes('drone_serial_number_format')) {
+    return 'Serial number must be 4-32 letters, numbers or hyphens, and cannot start or end with a hyphen.'
   }
   // not-null, bad input syntax, check constraint: the form let something through.
   if (code === '23502' || code === '22P02' || code === '23514') {

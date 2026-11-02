@@ -9,6 +9,7 @@ interface DroneStoreContextValue {
   liveDroneIds: string[]
   addDrone: (drone: Drone) => void
   updateDrone: (droneId: string, patch: Partial<Drone>) => void
+  removeDrone: (droneId: string) => void
   startLiveFeed: (droneId: string) => void
   stopLiveFeed: (droneId: string) => void
 }
@@ -34,6 +35,11 @@ export function DroneStoreProvider({ children }: { children: ReactNode }) {
     setDrones((prev) => prev.map((drone) => (drone.id === droneId ? { ...drone, ...patch } : drone)))
   }
 
+  function removeDrone(droneId: string) {
+    setDrones((prev) => prev.filter((drone) => drone.id !== droneId))
+    setLiveDroneIds((prev) => prev.filter((id) => id !== droneId))
+  }
+
   function startLiveFeed(droneId: string) {
     setLiveDroneIds((prev) => (prev.includes(droneId) ? prev : [...prev, droneId]))
   }
@@ -43,7 +49,7 @@ export function DroneStoreProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <DroneStoreContext.Provider value={{ drones, liveDroneIds, addDrone, updateDrone, startLiveFeed, stopLiveFeed }}>
+    <DroneStoreContext.Provider value={{ drones, liveDroneIds, addDrone, updateDrone, removeDrone, startLiveFeed, stopLiveFeed }}>
       {children}
     </DroneStoreContext.Provider>
   )

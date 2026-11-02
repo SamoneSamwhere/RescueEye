@@ -62,7 +62,7 @@ export function WorkflowTimeline() {
     return () => window.clearInterval(id)
   }, [inView])
 
-  const fillPercent = activeStep < 0 ? 0 : ((activeStep + 1) / STEPS.length) * 100
+  const fillPercent = activeStep < 0 ? 0 : (Math.min(activeStep + 1, STEPS.length) / STEPS.length) * 100
 
   return (
     <section id="workflow" className="relative overflow-hidden border-y border-border bg-surface-secondary">
