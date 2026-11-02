@@ -166,6 +166,9 @@ export function useSetCameraView() {
 }
 
 export const feedMjpegUrl = (feedId: string) => withToken(apiUrl(`/stream/feeds/${feedId}/mjpeg`))
+/** The feed as H.264 over a WebSocket (see feedVideoPlayer.ts). */
+export const feedVideoUrl = (feedId: string) =>
+  withToken(apiUrl(`/stream/feeds/${feedId}/video`)).replace(/^http/, 'ws')
 export const feedSnapshotUrl = (feedId: string) => withToken(apiUrl(`/stream/feeds/${feedId}/snapshot`))
 
 /** Adds a stored clip to the library list without a refetch round-trip. */

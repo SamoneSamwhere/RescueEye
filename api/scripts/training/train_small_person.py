@@ -35,7 +35,12 @@ OUT = API / "runs/candidates"
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--epochs", type=int, default=30)
-    ap.add_argument("--batch", type=int, default=4)       # yolov8s @1280 fits the 6 GB RTX 4050 at 4
+    # Batch 4 @1280 reached 8.65 GB on the 6 GB RTX 4050: Windows spilled into
+    # shared system memory, each step went from ~0.3 s to 3.3 s, and the run
+    # diverged to NaN losses in epoch 2 (2026-10-28). Batch 2 fits; Ultralytics
+    # accumulates gradients to its nominal batch of 64 either way.
+    ap.add_argument("--batch", type=int, default=2)
+    ap.add_argument("--lr0", type=float, default=0.0002)
     ap.add_argument("--imgsz", type=int, default=1280)
     ap.add_argument("--workers", type=int, default=6)
     ap.add_argument("--resume", action="store_true", help="continue an interrupted run from last.pt")
@@ -61,7 +66,7 @@ def main() -> None:
             # Fine-tuning: a gentle learning rate keeps what the weights already
             # know about VisDrone pedestrians while they learn new poses.
             optimizer="AdamW",
-            lr0=0.0005,
+            lr0=args.lr0,
             cos_lr=True,
             warmup_epochs=1,
             # A drone looks down from any heading, so vertical flips are real views.

@@ -14,6 +14,7 @@ The legacy single-feed endpoints (/stream/feed3, /stream/status, /stream/source,
 /stream/upload) are kept as aliases onto the primary (oldest) feed: the mobile
 app's STREAM_URL and the existing docs still point at them.
 """
+import asyncio
 import io
 import logging
 import math
@@ -24,10 +25,10 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw
-from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response, StreamingResponse
 
-from routers.deps import current_user
+from routers.deps import current_user, websocket_user
 from services import auth, drone_ingest, supabase_db
 from services import feed_registry as registry
 from services.feed_registry import (
@@ -39,6 +40,9 @@ from services.feed_registry import (
 
 logger = logging.getLogger("rescueeye.stream")
 router = APIRouter()
+# WebSocket routes. Mounted without the router-level sign-in guard, which reads
+# an HTTP request: each socket checks its own ?token= instead.
+ws_router = APIRouter()
 
 UPLOAD_DIR = Path(__file__).parent.parent / "data" / "uploads"
 ALLOWED_VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".ts", ".webm", ".m4v"}
@@ -388,6 +392,57 @@ async def stream_feed(feed_id: str):
     except FeedNotFound:
         raise HTTPException(404, f"No such feed '{feed_id}'")
     return _mjpeg_response(feed_id)
+
+
+@ws_router.websocket("/feeds/{feed_id}/video")
+async def feed_video(ws: WebSocket, feed_id: str):
+    """
+    The feed as H.264 for the live view (services/video_stream.py): ~2.5
+    Mbit/s at 30 fps where the MJPEG view needs ~9 at 15. The browser falls
+    back to /mjpeg when it cannot decode it.
+    """
+    from services import video_stream
+
+    if websocket_user(ws) is None:
+        await ws.close(code=4401, reason="sign in required")
+        return
+    try:
+        feed = registry.get_feed(feed_id)
+    except FeedNotFound:
+        await ws.close(code=4404, reason="no such feed")
+        return
+    await ws.accept()
+    video = video_stream.for_feed(feed)
+    viewer = video.join(asyncio.get_running_loop())
+
+    async def watch_for_close() -> None:
+        # The client never sends anything; receiving is how a closed tab shows up.
+        try:
+            while True:
+                await ws.receive()
+        except (WebSocketDisconnect, RuntimeError):
+            pass
+
+    closed = asyncio.create_task(watch_for_close())
+    try:
+        while not closed.done():
+            get = asyncio.create_task(viewer.queue.get())
+            done, _ = await asyncio.wait({get, closed}, timeout=5, return_when=asyncio.FIRST_COMPLETED)
+            if get not in done:
+                get.cancel()
+                if feed.stop_event.is_set():
+                    break                     # the feed was stopped
+                continue
+            await ws.send_bytes(get.result())
+    except (WebSocketDisconnect, RuntimeError, ConnectionError):
+        pass
+    finally:
+        closed.cancel()
+        video.leave(viewer)
+        try:
+            await ws.close()
+        except RuntimeError:
+            pass
 
 
 @router.post("/feeds/{feed_id}/detect")

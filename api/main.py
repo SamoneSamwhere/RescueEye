@@ -102,6 +102,7 @@ logger.info(f"[startup] CORS allowed origins: {', '.join(allowed_origins)}")
 app.include_router(detect.router,         prefix="/detect",     tags=["detection"], dependencies=[SIGNED_IN])
 app.include_router(classify.router,       prefix="/classify",   tags=["classification"], dependencies=[SIGNED_IN])
 app.include_router(stream.router,         prefix="/stream",     tags=["stream"], dependencies=[SIGNED_IN])
+app.include_router(stream.ws_router,      prefix="/stream",     tags=["stream"])  # sockets check ?token= themselves
 app.include_router(detections.router,     prefix="/detections", tags=["detections"], dependencies=[SIGNED_IN])
 app.include_router(models_router.router,  prefix="/models",     tags=["models"], dependencies=[SIGNED_IN])
 app.include_router(logs_router.router,    prefix="/logs",       tags=["logs"], dependencies=[SIGNED_IN])

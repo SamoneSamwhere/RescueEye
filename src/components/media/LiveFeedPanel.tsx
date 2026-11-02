@@ -3,7 +3,8 @@ import { Building2, Camera, Film, Flame, RefreshCw, Scan, ShieldCheck, Waves, X,
 import { Panel, Button, Badge } from '../ui'
 import { cn } from '../../lib/cn'
 import { SCENE_DAMAGE_LABEL } from '../../lib/labels'
-import { feedMjpegUrl, useFeedDetection, useSetCameraView } from '../../features/media/useFeeds'
+import { feedMjpegUrl, feedVideoUrl, useFeedDetection, useSetCameraView } from '../../features/media/useFeeds'
+import { canPlayFeedVideo, playFeedVideo } from '../../features/media/feedVideoPlayer'
 import { useDronePositions } from '../../features/media/useDronePositions'
 import type { CameraView, DetectionBox, Feed, SceneLabel } from '../../features/media/useFeeds'
 
@@ -64,13 +65,46 @@ export function LiveFeedPanel({
   const detection = useFeedDetection(feed.id, detectEnabled, intervalMs)
   const [attempt, setAttempt] = useState(0)
   const [streamFailed, setStreamFailed] = useState(false)
+  /**
+   * How the picture arrives: H.264 video when the browser can decode it
+   * (30 fps at a quarter of the bandwidth), otherwise the MJPEG stream.
+   * 'checking' while the browser is asked.
+   */
+  const [transport, setTransport] = useState<'checking' | 'video' | 'mjpeg'>('checking')
   const imgRef = useRef<HTMLImageElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
   const tearingDown = useRef(false)
   const retryTimer = useRef<number | undefined>(undefined)
 
   // feedMjpegUrl may already carry ?token=, so the retry counter is appended, not started.
   const base = feedMjpegUrl(feed.id)
   const streamSrc = `${base}${base.includes('?') ? '&' : '?'}a=${attempt}`
+
+  useEffect(() => {
+    let cancelled = false
+    canPlayFeedVideo().then((ok) => {
+      if (!cancelled) setTransport(ok ? 'video' : 'mjpeg')
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (transport !== 'video' || !canvas) return
+    return playFeedVideo(feedVideoUrl(feed.id), canvas, {
+      onStop: (played) => {
+        // Never showed a frame: this browser or network can't carry the video
+        // (decoder refused it, a proxy blocked the socket). MJPEG still works.
+        if (!played) setTransport('mjpeg')
+        else handleStreamError()
+      },
+    })
+    // handleStreamError reads the current attempt; re-running on it would
+    // reconnect for every retry tick rather than once per attempt.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transport, feed.id, attempt])
 
   /**
    * `src` is driven here rather than through JSX on purpose.
@@ -84,14 +118,14 @@ export function LiveFeedPanel({
    */
   useEffect(() => {
     const node = imgRef.current
-    if (!node) return
+    if (transport !== 'mjpeg' || !node) return
     tearingDown.current = false
     node.src = streamSrc
     return () => {
       tearingDown.current = true
       node.src = ''
     }
-  }, [streamSrc])
+  }, [streamSrc, transport])
 
   useEffect(() => () => window.clearTimeout(retryTimer.current), [])
 
@@ -164,13 +198,26 @@ export function LiveFeedPanel({
                 Retry stream
               </Button>
             </div>
-          ) : (
+          ) : transport === 'video' ? (
+            // 16x9 until the first frame sets the real size, so the panel
+            // doesn't jump.
+            <canvas
+              ref={canvasRef}
+              width={16}
+              height={9}
+              role="img"
+              aria-label={`Live feed from ${feed.label}`}
+              className="block w-full"
+            />
+          ) : transport === 'mjpeg' ? (
             <img
               ref={imgRef}
               alt={`Live feed from ${feed.label}`}
               onError={handleStreamError}
               className="block w-full"
             />
+          ) : (
+            <div className="aspect-video w-full" />
           )}
 
           {/* LIVE is a claim an operator acts on — "this is happening now" —

@@ -61,6 +61,8 @@ api/data/small_person.yaml
 api/data/posture/
 api/runs/posture/
 api/runs/candidates/
+api/runs/victim_small_failed_nan/
+api/runs/victim_small/train.log
 api/models/*_results/
 api/models/candidates/
 api/models/placeholder_*
@@ -73,3 +75,4 @@ api/data/mediamtx.log
 # Local docs (user guide figures, manuscript material). The three guides
 # already in git (docs/*.md) stay tracked.
 docs/
+api/models/backup_victim_*/
