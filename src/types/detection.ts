@@ -88,3 +88,10 @@ export interface Detection {
   locationSource?: 'drone_gps' | 'pilot' | 'simulated'
   locationAccuracyM?: number
 }
+
+/** A detection that can be mapped and dispatched to. */
+export type LocatedDetection = Detection & { location: DetectionLocation }
+
+export function hasLocation(detection: Detection): detection is LocatedDetection {
+  return detection.location !== undefined
+}
