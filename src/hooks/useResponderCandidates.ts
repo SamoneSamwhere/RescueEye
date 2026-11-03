@@ -63,7 +63,7 @@ export function useResponderCandidates(
           name: responder.name,
           accountStatus: responder.accountStatus,
           currentLocation,
-          distanceKm: currentLocation ? distanceKm(currentLocation, detection.location) : null,
+          distanceKm: currentLocation && detection.location ? distanceKm(currentLocation, detection.location) : null,
           missionStatus: activeMission?.status,
           missionIncidentPriority: missionIncident?.priority,
           isAvailable: responder.accountStatus === 'ACTIVE' && !activeMission,

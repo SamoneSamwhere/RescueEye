@@ -43,6 +43,7 @@ import { PublicLayout } from './layouts/PublicLayout'
 import { SystemAdminLayout } from './layouts/SystemAdminLayout'
 import { AgencyAdminLayout } from './layouts/AgencyAdminLayout'
 import { CommandStaffLayout } from './layouts/CommandStaffLayout'
+import { CasualtyAlertPopup } from '../components/detections'
 
 const fieldResponderRoutes: RouteObject = {
         element: (
@@ -142,6 +143,8 @@ const websiteRouter = () =>
           <ProtectedRoute allowedRoles={['COMMAND_STAFF']}>
             <CommandStaffDataProvider>
               <CommandStaffLayout />
+              {/* Outside the pages, so a casualty pops up wherever the operator is. */}
+              <CasualtyAlertPopup />
             </CommandStaffDataProvider>
           </ProtectedRoute>
         ),

@@ -68,8 +68,10 @@ export function PossibleCasualtyCard({ detection, onVerify, verifying = false }:
             Possible casualty
           </p>
           <p className="mt-0.5 truncate text-xs text-foreground-muted">
-            {formatDateTime(detection.detectedAt)} · {detection.location.lat.toFixed(5)},{' '}
-            {detection.location.lng.toFixed(5)}
+            {formatDateTime(detection.detectedAt)} ·{' '}
+            {detection.location
+              ? `${detection.location.lat.toFixed(5)}, ${detection.location.lng.toFixed(5)}`
+              : 'Location unknown'}
             {locationAccuracyText(detection) ? ` · ${locationAccuracyText(detection)}` : ''}
           </p>
 

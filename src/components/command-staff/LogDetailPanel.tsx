@@ -61,7 +61,11 @@ export function LogDetailPanel({ detection, incident, reviewerName, mediaAssetId
             <DetailField
               icon={MapPin}
               label="Location"
-              value={`${detection.location.lat.toFixed(4)}, ${detection.location.lng.toFixed(4)}`}
+              value={
+                detection.location
+                  ? `${detection.location.lat.toFixed(4)}, ${detection.location.lng.toFixed(4)}`
+                  : 'Unknown — the drone reported no position'
+              }
             />
             {detection.damageClassification && (
               <DetailField
