@@ -47,7 +47,12 @@ export interface Detection {
   damageClassification?: DamageClassification
   confidence: number
   boundingBox: BoundingBox
-  location: DetectionLocation
+  /**
+   * Where the subject is. Absent when the drone reported no position (DJI Fly
+   * sends no GPS): the detection is still raised for review, but it cannot be
+   * mapped or dispatched to until a position is known.
+   */
+  location?: DetectionLocation
   detectedAt: string
   validationStatus: DetectionValidationStatus
   /**

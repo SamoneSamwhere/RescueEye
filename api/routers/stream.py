@@ -397,7 +397,7 @@ async def stream_feed(feed_id: str):
 @ws_router.websocket("/feeds/{feed_id}/video")
 async def feed_video(ws: WebSocket, feed_id: str):
     """
-    The feed as H.264 for the live view (services/video_stream.py): ~2.5
+    The feed as H.264 for the live view (services/video_stream.py): 1.2
     Mbit/s at 30 fps where the MJPEG view needs ~9 at 15. The browser falls
     back to /mjpeg when it cannot decode it.
     """
@@ -416,10 +416,17 @@ async def feed_video(ws: WebSocket, feed_id: str):
     viewer = video.join(asyncio.get_running_loop())
 
     async def watch_for_close() -> None:
-        # The client never sends anything; receiving is how a closed tab shows up.
+        # The client sends the send time of the newest frame it has (see
+        # video_stream.MAX_LAG_MS); receiving is also how a closed tab shows up.
         try:
             while True:
-                await ws.receive()
+                message = await ws.receive()
+                if message["type"] == "websocket.disconnect":
+                    return
+                try:
+                    viewer.ack(float(message.get("text") or ""))
+                except ValueError:
+                    pass
         except (WebSocketDisconnect, RuntimeError):
             pass
 

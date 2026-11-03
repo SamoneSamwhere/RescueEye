@@ -61,6 +61,29 @@ def test_a_viewer_starts_at_a_keyframe_and_a_slow_one_skips_ahead():
         loop.close()
 
 
+def test_a_viewer_reporting_old_frames_is_skipped_ahead_once(monkeypatch):
+    loop = asyncio.new_event_loop()
+    try:
+        now = [100_000.0]                          # seconds
+        monkeypatch.setattr(video_stream.time, "time", lambda: now[0])
+        viewer = video_stream._Viewer(loop)
+        viewer._offer(b"K", True)
+        viewer.ack(now[0] * 1000 - 100)            # 0.1 s behind: fine
+        assert viewer.queue.qsize() == 1
+
+        viewer.ack(now[0] * 1000 - video_stream.MAX_LAG_MS - 300)
+        assert viewer.queue.empty() and viewer.need_key
+
+        # Reports still in flight from before the skip describe the backlog it
+        # already dropped; they must not skip the viewer again.
+        viewer._offer(b"K", True)
+        now[0] += 0.2
+        viewer.ack(now[0] * 1000 - video_stream.MAX_LAG_MS - 500)
+        assert viewer.queue.qsize() == 1
+    finally:
+        loop.close()
+
+
 @pytest.fixture()
 def ws_client():
     app = FastAPI()

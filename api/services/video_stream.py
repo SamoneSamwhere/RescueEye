@@ -4,7 +4,7 @@ H.264 copy of a feed for the browser's live view.
 The MJPEG view sends every frame as a whole JPEG. Through the Cloudflare tunnel
 that capped the view at 15 fps (~9 Mbit/s per viewer at 960 px); 30 fps would
 need ~18. Video only sends what changed between frames: the same 960 px at
-30 fps measures ~2.5 Mbit/s.
+30 fps is 1.2 Mbit/s.
 
 One FFmpeg encoder per feed, started by the first viewer and stopped shortly
 after the last one leaves. It encodes the frames the AI already reads (the
@@ -33,13 +33,22 @@ from services import feed_registry as registry
 logger = logging.getLogger("rescueeye.video")
 
 VIDEO_MAX_WIDTH = int(os.getenv("VIDEO_MAX_WIDTH", "960"))
-VIDEO_BITRATE_K = int(os.getenv("VIDEO_BITRATE_K", "2500"))
+# The tunnel measured 1.5-2.3 Mbit/s to a viewer, so the first setting (2.5)
+# built a backlog that put the picture 2+ s behind. x264 "veryfast" at 1.2
+# looks better than "ultrafast" at 2.5 (PSNR 32.6 vs 31.2 dB on the rescue
+# clip) for ~7% of one core.
+VIDEO_BITRATE_K = int(os.getenv("VIDEO_BITRATE_K", "1200"))
+VIDEO_PRESET = os.getenv("VIDEO_PRESET", "veryfast")
 # One keyframe a second: how long a new viewer waits at most, and how long a
 # viewer whose connection fell behind waits to resume.
 VIDEO_GOP = int(os.getenv("VIDEO_GOP", "30"))
 # A viewer more than this many frames behind is skipped ahead to the next
 # keyframe instead of being fed an ever-older backlog.
 MAX_QUEUED_FRAMES = 45
+# The same for a backlog the server cannot see. Through the tunnel, frames pile
+# up in cloudflared's buffers, not in our queue, so the browser reports the
+# send time of the newest frame it has; one this far behind is skipped ahead.
+MAX_LAG_MS = float(os.getenv("VIDEO_MAX_LAG_MS", "700"))
 # Keep the encoder this long after the last viewer leaves: a page reload or a
 # panel remount reconnects within it and gets the picture at once.
 IDLE_STOP_S = 10.0
@@ -51,12 +60,17 @@ def encoder_cmd(fps: float) -> list[str]:
     """FFmpeg reading JPEG frames on stdin and writing H.264 to stdout."""
     return [
         registry._ffmpeg_binary(), "-loglevel", "error",
+        # The input is always JPEG frames, so there is nothing to probe. By
+        # default FFmpeg reads ~5 MB / 5 s of it first: at a drone feed's
+        # 27 KB frames that held the first picture back 5+ seconds, and
+        # measured 0 frames out in the first 5 s. Without it: ~0.1 s.
+        "-probesize", "32", "-analyzeduration", "0", "-fflags", "nobuffer",
         "-f", "image2pipe", "-c:v", "mjpeg", "-framerate", str(fps), "-i", "pipe:0",
         "-an", "-vf", f"scale=trunc(min({VIDEO_MAX_WIDTH}\\,iw)/2)*2:-2",
-        # ultrafast + zerolatency: no lookahead, no B-frames, so each frame
-        # leaves the encoder as soon as it arrives. Baseline profile decodes
-        # everywhere WebCodecs does.
-        "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
+        # zerolatency: no lookahead, no B-frames, so each frame leaves the
+        # encoder as soon as it arrives. Baseline profile decodes everywhere
+        # WebCodecs does.
+        "-c:v", "libx264", "-preset", VIDEO_PRESET, "-tune", "zerolatency",
         "-profile:v", "baseline", "-pix_fmt", "yuv420p",
         "-g", str(VIDEO_GOP), "-bf", "0",
         "-b:v", f"{VIDEO_BITRATE_K}k", "-maxrate", f"{VIDEO_BITRATE_K}k",
@@ -101,6 +115,21 @@ class _Viewer:
         self.loop = loop
         self.queue: asyncio.Queue[bytes] = asyncio.Queue()
         self.need_key = True
+        # Lag reports for frames sent before the last skip describe the backlog
+        # that skip already dealt with, and are ignored.
+        self.skipped_at = 0.0
+
+    def ack(self, sent_ms: float) -> None:
+        """The browser has the frame sent at `sent_ms`; skip ahead if that is too old."""
+        if sent_ms >= self.skipped_at and time.time() * 1000 - sent_ms > MAX_LAG_MS:
+            self.skip()
+
+    def skip(self) -> None:
+        """Drop what is queued and resume at the next keyframe."""
+        while not self.queue.empty():
+            self.queue.get_nowait()
+        self.need_key = True
+        self.skipped_at = time.time() * 1000
 
     def offer(self, packed: bytes, key: bool) -> None:
         """Called on the encoder thread; hands the frame to the viewer's loop."""
@@ -110,9 +139,7 @@ class _Viewer:
         if self.queue.qsize() >= MAX_QUEUED_FRAMES:
             # Behind by over a second: drop the backlog and resume at the next
             # keyframe (a P-frame without its predecessors cannot be decoded).
-            while not self.queue.empty():
-                self.queue.get_nowait()
-            self.need_key = True
+            self.skip()
         if self.need_key:
             if not key:
                 return

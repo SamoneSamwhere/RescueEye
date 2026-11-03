@@ -20,6 +20,8 @@ const PLAYOUT_DELAY_MS = 120
 const OFFSET_WINDOW_MS = 4000
 /** Decoded frames waiting to be shown; beyond this the oldest are dropped. */
 const MAX_PENDING = 30
+/** How often the newest frame's send time is reported back. */
+const ACK_EVERY_MS = 250
 
 export async function canPlayFeedVideo(): Promise<boolean> {
   if (typeof VideoDecoder === 'undefined' || typeof EncodedVideoChunk === 'undefined') return false
@@ -65,6 +67,13 @@ export function playFeedVideo(url: string, canvas: HTMLCanvasElement, callbacks:
   let lastShown = -1
   let interval = 1000 / 30
 
+  // Tell the server how far behind we are. Through the tunnel a backlog builds
+  // where the server cannot see it; reporting the newest frame's send time
+  // lets it skip us ahead to the next keyframe once we fall too far behind.
+  const ackTimer = window.setInterval(() => {
+    if (lastSent > 0 && ws.readyState === WebSocket.OPEN) ws.send(String(lastSent))
+  }, ACK_EVERY_MS)
+
   const decoder = new VideoDecoder({
     output: (frame) => {
       pending.push(frame)
@@ -77,6 +86,7 @@ export function playFeedVideo(url: string, canvas: HTMLCanvasElement, callbacks:
     if (stopped) return
     stopped = true
     cancelAnimationFrame(raf)
+    window.clearInterval(ackTimer)
     ws.onmessage = ws.onclose = ws.onerror = null
     if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) ws.close()
     if (decoder.state !== 'closed') decoder.close()
