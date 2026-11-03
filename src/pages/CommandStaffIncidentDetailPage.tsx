@@ -61,7 +61,7 @@ export function CommandStaffIncidentDetailPage() {
   const { incidents, detections, missions, mediaAssets, closeIncident } = useCommandStaffData()
 
   const incident = incidents.find((i) => i.id === incidentId) ?? null
-  const detection = incident ? (detections.find((d) => d.id === incident.detectionId) ?? null) : null
+  const detection = incident ? (incidentDetection(detections, incident.detectionId) ?? null) : null
 
   const sourceLabel = detection ? sourceLabelFor(detection.mediaAssetId, mediaAssets, mockDrones) : ''
   const timelineEvents = useIncidentTimeline(incident, detection, missions, sourceLabel)

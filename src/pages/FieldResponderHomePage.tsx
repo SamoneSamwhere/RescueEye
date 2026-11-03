@@ -51,12 +51,12 @@ export function FieldResponderHomePage() {
   const pendingMission = missions.find((m) => m.status === 'PENDING')
   const pendingIncident = pendingMission ? incidents.find((i) => i.id === pendingMission.incidentId) : undefined
   const pendingDetection = pendingIncident
-    ? detections.find((d) => d.id === pendingIncident.detectionId)
+    ? incidentDetection(detections, pendingIncident.detectionId)
     : undefined
 
   const activeMission = missions.find((m) => FIELD_RESPONDER_ACTIVE_STATUSES.has(m.status))
   const activeIncident = activeMission ? incidents.find((i) => i.id === activeMission.incidentId) : undefined
-  const activeDetection = activeIncident ? detections.find((d) => d.id === activeIncident.detectionId) : undefined
+  const activeDetection = activeIncident ? incidentDetection(detections, activeIncident.detectionId) : undefined
 
   // A mission whose incident is missing (e.g. stale data) cannot be drawn, so
   // it must not hide the standby card either.

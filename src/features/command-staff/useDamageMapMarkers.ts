@@ -35,7 +35,7 @@ export function useDamageMapMarkers(): MapMarker[] {
   return useMemo(() => {
     const incidentMarkers: MapMarker[] = incidents
       .map((incident): IncidentMapMarker | null => {
-        const detection = detections.find((d) => d.id === incident.detectionId)
+        const detection = incidentDetection(detections, incident.detectionId)
         if (!detection) return null
         return {
           kind: 'INCIDENT' as const,

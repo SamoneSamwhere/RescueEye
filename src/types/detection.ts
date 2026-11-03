@@ -95,3 +95,13 @@ export type LocatedDetection = Detection & { location: DetectionLocation }
 export function hasLocation(detection: Detection): detection is LocatedDetection {
   return detection.location !== undefined
 }
+
+/**
+ * The detection behind an incident. Verification refuses a detection with no
+ * location (see verifyDetection), so every incident's detection has one; this
+ * states that for the type checker and skips anything that somehow lacks it.
+ */
+export function incidentDetection(detections: Detection[], detectionId: string): LocatedDetection | undefined {
+  const detection = detections.find((d) => d.id === detectionId)
+  return detection && hasLocation(detection) ? detection : undefined
+}
