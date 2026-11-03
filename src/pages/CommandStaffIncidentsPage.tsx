@@ -8,6 +8,7 @@ import { useCommandStaffData } from '../features/command-staff'
 import { mockDrones } from '../data/mockDrones'
 import { mockUsers } from '../data/mockUsers'
 import { sourceLabelFor } from '../lib/sourceLabel'
+import { incidentDetection } from '../types/detection'
 
 export function CommandStaffIncidentsPage() {
   const { incidents, detections, mediaAssets } = useCommandStaffData()

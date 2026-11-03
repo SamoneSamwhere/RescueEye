@@ -45,6 +45,7 @@ import { useAlerts, ALERT_TYPE_LABEL, ALERT_STATUS_LABEL, ALERT_STATUS_TONE } fr
 import type { AlertRecord, AlertType } from '../features/alerts'
 import { getAgencyResponders } from '../db/incidents'
 import { isDbId } from '../lib/incidentClassification'
+import { incidentDetection } from '../types/detection'
 
 const CHANNEL_ORDER: AlertType[] = ['SMS', 'PUSH', 'DASHBOARD']
 

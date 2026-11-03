@@ -17,6 +17,7 @@ import { useDetectionStore } from '../state/DetectionStore'
 import { useMissionStore } from '../state/MissionStore'
 import { responseTeamFor } from '../lib/responseTeams'
 import { fieldResponderMissionNavigatePath, ROUTES } from '../routes/paths'
+import { incidentDetection } from '../types/detection'
 
 export function FieldResponderMissionDetailPage() {
   const { missionId } = useParams<{ missionId: string }>()

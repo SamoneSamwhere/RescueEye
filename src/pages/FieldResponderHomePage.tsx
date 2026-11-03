@@ -20,6 +20,7 @@ import { fieldResponderMissionDetailPath } from '../routes/paths'
 import { cn } from '../lib/cn'
 import type { GeoPoint } from '../types/geo'
 import type { Detection } from '../types/detection'
+import { incidentDetection } from '../types/detection'
 
 const TONE_TILE = {
   success: 'bg-accent-subtle text-accent',

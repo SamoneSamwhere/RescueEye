@@ -24,6 +24,7 @@ import { notificationsFor } from '../lib/notifications'
 import { ACTIVE_MISSION_STATUSES } from '../lib/missionStatus'
 import { responseTeamFor } from '../lib/responseTeams'
 import { fieldResponderMissionDetailPath } from '../routes/paths'
+import { incidentDetection } from '../types/detection'
 
 /**
  * The responder's own operational picture: themselves, the incident they have

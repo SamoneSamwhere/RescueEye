@@ -9,6 +9,7 @@ import { MAP_VISIBLE_MISSION_STATUSES } from '../../lib/missionStatus'
 import { useCommandStaffData } from './CommandStaffDataProvider'
 import { useLiveUpdates } from '../../state/LiveUpdatesStore'
 import { droneMarker, useDronePositions } from '../media/useDronePositions'
+import { incidentDetection } from '../../types/detection'
 
 /**
  * Every marker on the Command Staff Damage Map.
