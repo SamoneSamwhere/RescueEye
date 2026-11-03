@@ -273,8 +273,9 @@ export function useLiveDetections({
         byId.get(next.id) ??
         current.find((d) => d.validationStatus === 'PENDING' && isSameCasualty(d, next)) ??
         // At the cap, a new sighting refreshes the casualty already under
-        // review rather than queueing behind it.
-        (next.category === 'CASUALTY' && pendingCasualties >= MAX_PENDING_CASUALTIES
+        // review rather than queueing behind it. A demo casualty (POST
+        // /detections/demo) was asked for by name and is always its own.
+        (next.category === 'CASUALTY' && !item.id.startsWith('demo-') && pendingCasualties >= MAX_PENDING_CASUALTIES
           ? current.find((d) => d.category === 'CASUALTY' && d.validationStatus === 'PENDING')
           : undefined)
 
