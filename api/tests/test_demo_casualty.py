@@ -10,11 +10,13 @@ from services import auth, detection_store, responder_registry
 @pytest.fixture()
 def client():
     detection_store._store.clear()
+    detection_store._demos.clear()
     responder_registry.reset()
     app = FastAPI()
     app.include_router(detections.router, prefix="/detections")
     yield TestClient(app)
     detection_store._store.clear()
+    detection_store._demos.clear()
     responder_registry.reset()
 
 
@@ -50,3 +52,13 @@ def test_demo_casualty_at_an_exact_point(client):
 def test_field_responders_cannot_create_one(client):
     res = client.post("/detections/demo", headers=_headers(role="FIELD_RESPONDER"), json={"lat": 10.3, "lng": 123.9})
     assert res.status_code == 403
+
+
+def test_a_busy_feed_cannot_push_the_demo_out_of_view(client):
+    """The web app reads the newest 50; a live feed used to bury the demo within minutes."""
+    demo = client.post("/detections/demo", headers=_headers(), json={"lat": 10.3, "lng": 123.9}).json()
+    detection_store.add_detections(
+        [{"id": f"real-{i}", "class": "casualty", "confidence": 0.8, "bbox": {"x": 0, "y": 0, "w": 9, "h": 9}}
+         for i in range(detection_store.MAX_STORED + 10)], 1.0)
+    recent = client.get("/detections/recent?limit=50").json()["detections"]
+    assert recent[0]["id"] == demo["id"]

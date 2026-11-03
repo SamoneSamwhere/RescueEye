@@ -84,7 +84,7 @@ async def create_demo_casualty(
     source = next((x for x in reversed(detection_store._store)
                    if x.cls == "casualty" and x.snapshot is not None), None)
     det_id = f"demo-{uuid.uuid4().hex[:8]}"
-    detection_store._store.append(detection_store.StoredDetection(
+    detection_store._demos.append(detection_store.StoredDetection(
         id=det_id,
         cls="casualty",
         confidence=0.88,
