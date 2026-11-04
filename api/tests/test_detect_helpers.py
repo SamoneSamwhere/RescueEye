@@ -72,3 +72,21 @@ def test_apply_thermal_preserves_frame_dimensions():
     frame = np.random.randint(0, 255, (20, 30, 3), dtype=np.uint8)
     thermal = detect._apply_thermal(frame)
     assert thermal.shape == (20, 30, 3)
+
+
+def test_a_hand_on_a_visible_body_is_left_to_the_body_detector():
+    body = {"bbox": {"x": 100, "y": 100, "w": 80, "h": 200}, "confidence": 0.8}
+    own_hand = {"bbox": {"x": 160, "y": 180, "w": 25, "h": 25}, "confidence": 0.6, "partial": True}
+    buried_hand = {"bbox": {"x": 600, "y": 400, "w": 20, "h": 20}, "confidence": 0.6, "partial": True}
+    assert detect._partly_buried([own_hand, buried_hand], [body]) == [buried_hand]
+
+
+def test_a_weak_body_box_over_rubble_does_not_swallow_a_sure_hand():
+    rubble = {"bbox": {"x": 665, "y": 0, "w": 449, "h": 349}, "confidence": 0.39}
+    hand = {"bbox": {"x": 681, "y": 237, "w": 99, "h": 95}, "confidence": 0.89, "partial": True}
+    assert detect._partly_buried([hand], [rubble]) == [hand]
+
+
+def test_buried_detection_is_off_without_the_model(monkeypatch):
+    monkeypatch.setattr(detect, "get_buried_ort_session", lambda: None)
+    assert detect._run_buried(np.zeros((720, 1280, 3), dtype=np.uint8)) == []

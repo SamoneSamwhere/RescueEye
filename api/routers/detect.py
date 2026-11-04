@@ -28,6 +28,7 @@ from services.yolo_model import (
     DAMAGE_PROXY_CLASSES,
     PERSON_CLASS,
     get_coco_assist,
+    get_buried_ort_session,
     get_coco_ort_session,
     get_fire_ort_names,
     get_fire_ort_session,
@@ -97,6 +98,18 @@ REPORT_NON_CASUALTIES = os.getenv("REPORT_NON_CASUALTIES", "false").lower() == "
 # the live overlay needs no second request. Both are hazards to show, not
 # subjects to track: they skip the tracker, the store and the casualty alerts.
 FIRE_CONF       = float(os.getenv("FIRE_CONF", "0.35"))
+
+# Partly buried people: only a hand, an arm, a head or a leg showing (see
+# services/yolo_model.py). Their boxes join the person boxes for tracking, and
+# the casualty gate treats them as casualties: someone half under rubble or
+# water needs rescue whatever their posture.
+BURIED_CONF     = float(os.getenv("BURIED_CONF", "0.5"))
+# A part box mostly inside a whole-body box is that person's own hand or head:
+# the body detector already has them, and the normal posture rules apply. Only
+# when the body box is at least as sure as the part box, though: the victim
+# model's weak boxes over rubble (0.39 on a held-out test) otherwise swallowed
+# a hand the buried model was 0.89 sure of.
+BURIED_INSIDE_BODY = 0.5
 SCENE_CLASSIFY  = os.getenv("SCENE_CLASSIFY", "true").lower() == "true"
 
 
@@ -550,6 +563,54 @@ def _run_hazards(frame: np.ndarray) -> list[dict]:
     return out
 
 
+def _run_buried(frame: np.ndarray) -> list[dict]:
+    """Boxes around the visible part of partly buried people, or [] when the model isn't loaded."""
+    sess = get_buried_ort_session()
+    if sess is None:
+        return []
+    try:
+        blob, scale, pad_x, pad_y = _blob(frame, _input_hw(sess, 1280))
+        raw = ort_run(sess, blob)[0][0]   # [4+1, N]
+    except Exception as exc:
+        logger.warning(f"[detect] buried-person ORT failed: {exc}")
+        return []
+
+    scores = raw[4]
+    keep = scores >= BURIED_CONF
+    if not keep.any():
+        return []
+    cx, cy, bw, bh = raw[0][keep], raw[1][keep], raw[2][keep], raw[3][keep]
+    conf = scores[keep]
+    boxes = np.stack([
+        ((cx - bw / 2) - pad_x) / scale, ((cy - bh / 2) - pad_y) / scale,
+        ((cx + bw / 2) - pad_x) / scale, ((cy + bh / 2) - pad_y) / scale,
+    ], axis=1)
+    fh, fw = frame.shape[:2]
+    out: list[dict] = []
+    for i in _nms(boxes, conf):
+        x, y = max(0, int(boxes[i][0])), max(0, int(boxes[i][1]))
+        w, h = min(fw, int(boxes[i][2])) - x, min(fh, int(boxes[i][3])) - y
+        if w > 0 and h > 0:
+            out.append({"class": "person", "confidence": round(float(conf[i]), 3),
+                        "bbox": {"x": x, "y": y, "w": w, "h": h}, "partial": True})
+    return out
+
+
+def _inside(part: dict, body: dict) -> float:
+    """Fraction of `part`'s area that lies inside `body`."""
+    ix = max(0, min(part["x"] + part["w"], body["x"] + body["w"]) - max(part["x"], body["x"]))
+    iy = max(0, min(part["y"] + part["h"], body["y"] + body["h"]) - max(part["y"], body["y"]))
+    area = part["w"] * part["h"]
+    return ix * iy / area if area > 0 else 0.0
+
+
+def _partly_buried(parts: list[dict], bodies: list[dict]) -> list[dict]:
+    """The part boxes that don't belong to a person the body detectors already see."""
+    return [p for p in parts
+            if not any(_inside(p["bbox"], b["bbox"]) >= BURIED_INSIDE_BODY
+                       and b["confidence"] >= p["confidence"] for b in bodies)]
+
+
 def _run_coco_assist(frame: np.ndarray) -> list[dict]:
     """
     Whole-body casualties via the generic COCO detector (class 0 = person).
@@ -952,6 +1013,8 @@ def _analyse(jpeg: bytes, stream: StreamState, want_annotation: bool,
 
     with stream.lock:
         detections, inference_ms, poses = _run_victim(frame)
+        buried = _partly_buried(_run_buried(frame), detections)
+        detections = detections + buried
 
         # ── SORT tracking — assign persistent IDs via Kalman filter ─────────
         fh, fw = frame.shape[:2]
@@ -980,6 +1043,10 @@ def _analyse(jpeg: bytes, stream: StreamState, want_annotation: bool,
                         "h": min(fh - max(0, int(y1)), int(y2 - y1)),
                     },
                 })
+                # The tracker rebuilds boxes, so whether this one is a partly
+                # buried person is matched back by overlap.
+                detections[-1]["partial"] = any(
+                    _iou(detections[-1]["bbox"], b["bbox"]) >= 0.3 for b in buried)
         else:
             stream.tracker.update(np.empty((0, 5), dtype=np.float32))
 

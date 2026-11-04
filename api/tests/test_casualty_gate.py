@@ -484,3 +484,51 @@ def test_walker_that_reads_as_lying_is_vetoed_by_motion(monkeypatch):
     assert verdict.is_casualty is False
     assert "moving" in verdict.reasons
 
+
+
+# ── Partly buried people ──────────────────────────────────────────────────────
+
+def _hand(x=400, y=300):
+    """A small box around a hand showing out of rubble, flagged by the buried-person model."""
+    return {"bbox": {"x": x, "y": y, "w": 18, "h": 22}, "partial": True}
+
+
+def test_a_hand_in_rubble_is_a_casualty_without_any_posture():
+    verdict = casualty.judge(_hand(), None, FRAME)
+    assert verdict.is_casualty
+    assert "partly_buried" in verdict.reasons
+    assert verdict.score == casualty.BURIED_CASUALTY_SCORE
+
+
+def test_a_tracked_hand_waits_for_a_second_sighting(monkeypatch):
+    clock = [1000.0]
+    monkeypatch.setattr(casualty.time, "monotonic", lambda: clock[0])
+    first = casualty.judge({**_hand(), "track_id": 7}, None, FRAME)
+    assert not first.is_casualty and "awaiting_second_sighting" in first.reasons
+
+
+def test_a_waving_hand_is_not_vetoed_as_moving(monkeypatch):
+    """A trapped person waving is who this is for; the movement veto is for people walking past."""
+    clock = [1000.0]
+    monkeypatch.setattr(casualty.time, "monotonic", lambda: clock[0])
+    casualty.judge({**_hand(x=400), "track_id": 7}, None, FRAME)
+    clock[0] += 1.5
+    # Two of its own widths sideways: far too fast for the body-length veto.
+    verdict = casualty.judge({**_hand(x=436), "track_id": 7}, None, FRAME)
+    assert verdict.is_casualty
+    assert "moving" not in verdict.reasons
+
+
+def test_a_part_box_crossing_the_frame_is_someone_walking_past(monkeypatch):
+    clock = [1000.0]
+    monkeypatch.setattr(casualty.time, "monotonic", lambda: clock[0])
+    casualty.judge({**_hand(x=400), "track_id": 7}, None, FRAME)
+    clock[0] += 3.0
+    verdict = casualty.judge({**_hand(x=700), "track_id": 7}, None, FRAME)
+    assert not verdict.is_casualty and "moving" in verdict.reasons
+
+
+def test_a_partly_buried_responder_is_still_vetoed():
+    responder_registry.report("r1", 10.3, 123.9)
+    verdict = casualty.judge({**_hand(), "lat": 10.3, "lng": 123.9, "subject_located": True}, None, FRAME)
+    assert not verdict.is_casualty and verdict.reasons == ["known_responder"]

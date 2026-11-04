@@ -89,8 +89,14 @@ function toCategory(cls: string): DetectionCategory {
  * a missed detection.
  */
 function isReviewable(d: ApiDetection): boolean {
-  return d.class !== 'person'
+  if (d.class === 'person') return false
+  // A casualty is raised for review only once the detector is 75% sure: below
+  // that it stays a box on the live overlay. Demo casualties are created at 88%.
+  return d.class !== 'casualty' || d.confidence >= CASUALTY_REVIEW_CONFIDENCE
 }
+
+/** Detector confidence at which a casualty enters Detection Review (and pops up). */
+export const CASUALTY_REVIEW_CONFIDENCE = 0.75
 
 /**
  * Pixel box -> percentage box. The review UI positions the overlay with

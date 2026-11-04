@@ -405,6 +405,27 @@ class StillnessMonitor:
         diag = math.hypot(float(frame_shape[1]), float(frame_shape[0])) or 1.0
         return 1.0 - _clamp01((drift / diag) / STILLNESS_MAX_DRIFT), "stillness_measured"
 
+    def recent_drift(self, track_id: int, frame_shape) -> float | None:
+        """
+        How fast this track's box travelled across the frame over the last
+        MOTION_WINDOW_S, in frame diagonals per second; None until measured.
+
+        Unlike recent_motion this ignores the box's own size. A waving hand
+        moves many of its own lengths a second but stays where it is; someone
+        walking past leaves.
+        """
+        with self._lock:
+            hist = self._tracks.get(track_id)
+            if hist is None or not hist.points:
+                return None
+            now = hist.points[-1][0]
+            points = [p for p in hist.points if now - p[0] <= MOTION_WINDOW_S]
+        if len(points) < 2 or points[-1][0] - points[0][0] < MOTION_MIN_SPAN_S:
+            return None
+        first, last = points[0], points[-1]
+        diag = math.hypot(float(frame_shape[1]), float(frame_shape[0])) or 1.0
+        return math.hypot(last[1] - first[1], last[2] - first[2]) / diag / (last[0] - first[0])
+
     def recent_motion(self, track_id: int) -> float | None:
         """
         How fast this track moved over the last MOTION_WINDOW_S, in its own body
@@ -435,6 +456,16 @@ _monitor = StillnessMonitor()
 
 def monitor() -> StillnessMonitor:
     return _monitor
+
+
+# Verdict score for a partly buried person (only part of the body visible).
+# High on purpose: being half under rubble or water is the casualty evidence.
+BURIED_CASUALTY_SCORE = float(os.getenv("BURIED_CASUALTY_SCORE", "0.9"))
+# How fast a partly buried subject's box may travel across the frame, in frame
+# diagonals per second (0.02 is ~30px/s on a 1280x720 frame). A waving hand
+# stays put; a walker crossing a close shot covers several times this. Loose
+# enough to absorb the camera-compensation residual of a drone climbing.
+BURIED_MAX_DRIFT_PER_S = float(os.getenv("BURIED_MAX_DRIFT_PER_S", "0.02"))
 
 
 # -- Fusion -------------------------------------------------------------------
@@ -480,6 +511,9 @@ def judge(detection: dict, keypoints, frame_shape,
             return verdict
     elif responder_registry.active():
         verdict.reasons.append("responder_veto_unavailable_no_subject_position")
+
+    if detection.get("partial"):
+        return _judge_partly_buried(detection, frame_shape, monitor or _monitor, verdict)
 
     posture, posture_reason = (None, "posture_unavailable")
     if keypoints is not None:
@@ -537,6 +571,37 @@ def judge(detection: dict, keypoints, frame_shape,
         confirmed = False
 
     verdict.is_casualty = qualifying and confirmed and verdict.score >= CASUALTY_MIN_SCORE
+    return verdict
+
+
+def _judge_partly_buried(detection: dict, frame_shape, mon: StillnessMonitor,
+                         verdict: CasualtyVerdict) -> CasualtyVerdict:
+    """
+    Only a hand, an arm, a head or a leg shows: the rest of the body is under
+    rubble or water. That is a casualty whatever the posture, and there is no
+    posture to read from a hand anyway.
+
+    Waving does not veto it: a trapped person waving a hand is exactly who
+    this is for. Travelling across the frame does. Someone buried stays where
+    they are, while the people this model also fires on by mistake (a walker
+    the body detectors missed, a firefighter half behind a truck) move on.
+    A second sighting of a tracked box is required too, so one frame's rubble
+    that happens to look like a hand doesn't raise an alert.
+    """
+    verdict.reasons.append("partly_buried")
+    verdict.score = BURIED_CASUALTY_SCORE
+    track_id = detection.get("track_id")
+    if track_id is not None:
+        verdict.stillness, reason = mon.update(int(track_id), detection.get("bbox") or {}, frame_shape)
+        verdict.reasons.append(reason)
+        drift = mon.recent_drift(int(track_id), frame_shape)
+        if drift is None:
+            verdict.reasons.append("awaiting_second_sighting")
+            return verdict
+        if drift > BURIED_MAX_DRIFT_PER_S:
+            verdict.reasons.append("moving")
+            return verdict
+    verdict.is_casualty = True
     return verdict
 
 

@@ -5,10 +5,11 @@ import { Button } from '../ui'
 import { useCommandStaffData } from '../../features/command-staff'
 import { useToast } from '../../features/toast'
 import { ROUTES } from '../../routes/paths'
+import { CASUALTY_REVIEW_CONFIDENCE } from '../../features/media/useLiveDetections'
 import { PossibleCasualtyCard } from './PossibleCasualtyCard'
 
-/** Detector confidence at which a pending casualty interrupts the operator. */
-export const CASUALTY_POPUP_CONFIDENCE = 0.75
+/** Detector confidence at which a pending casualty interrupts the operator: the same bar as entering review. */
+export const CASUALTY_POPUP_CONFIDENCE = CASUALTY_REVIEW_CONFIDENCE
 
 /**
  * Pops up on every Command Staff page the moment a pending casualty reaches
