@@ -99,6 +99,12 @@ REPORT_NON_CASUALTIES = os.getenv("REPORT_NON_CASUALTIES", "false").lower() == "
 # the live overlay needs no second request. Both are hazards to show, not
 # subjects to track: they skip the tracker, the store and the casualty alerts.
 FIRE_CONF       = float(os.getenv("FIRE_CONF", "0.35"))
+# A "fire" box mostly covered by people is a rescuer's orange suit: the D-Fire
+# detector was trained on flame photos and high-visibility orange looks like
+# flame to it. Measured on the library: real flames are at most 9% covered by
+# person boxes (firefighters beside a burning barn included), suit false
+# positives 32-100%. Smoke is exempt: real smoke drifts over people.
+FIRE_MAX_PERSON_COVER = float(os.getenv("FIRE_MAX_PERSON_COVER", "0.25"))
 
 # Partly buried people: only a hand, an arm, a head or a leg showing (see
 # services/yolo_model.py). Their boxes join the person boxes for tracking, and
@@ -569,6 +575,28 @@ def _run_hazards(frame: np.ndarray) -> list[dict]:
                 "bbox":       {"x": x, "y": y, "w": w, "h": h},
             })
     return out
+
+
+def _person_cover(box: dict, people: list[dict]) -> float:
+    """Share of `box` covered by the union of the `people` boxes."""
+    w, h = box["w"], box["h"]
+    if w <= 0 or h <= 0:
+        return 0.0
+    mask = np.zeros((h, w), bool)
+    for p in people:
+        x0, y0 = max(0, p["x"] - box["x"]), max(0, p["y"] - box["y"])
+        x1, y1 = min(w, p["x"] + p["w"] - box["x"]), min(h, p["y"] + p["h"] - box["y"])
+        if x1 > x0 and y1 > y0:
+            mask[y0:y1, x0:x1] = True
+    return float(mask.mean())
+
+
+def _drop_fire_on_people(hazards: list[dict], people: list[dict]) -> list[dict]:
+    """Removes "fire" boxes that are really people in orange (see FIRE_MAX_PERSON_COVER)."""
+    if not people:
+        return hazards
+    return [h for h in hazards
+            if h["class"] != "fire" or _person_cover(h["bbox"], people) < FIRE_MAX_PERSON_COVER]
 
 
 def _run_buried(frame: np.ndarray) -> list[dict]:
@@ -1171,7 +1199,7 @@ def _analyse(jpeg: bytes, stream: StreamState, want_annotation: bool,
         # Run on the original frame, never the thermal display copy: both
         # models were trained on colour, and flame is the one thing the
         # inferno LUT would make look like everything else.
-        hazards = _run_hazards(frame)
+        hazards = _drop_fire_on_people(_run_hazards(frame), [d["bbox"] for d in annotated])
         if SCENE_CLASSIFY and time.monotonic() - stream.scene_at >= SCENE_INTERVAL_S:
             try:
                 stream.scene = classify_frame(frame)

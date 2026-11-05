@@ -103,3 +103,31 @@ def test_posture_model_reading_goes_to_the_overlapping_person_only():
 def test_posture_model_is_off_without_the_model(monkeypatch):
     monkeypatch.setattr(detect, "get_casualty_ort_session", lambda: None)
     assert detect._run_posture_model(np.zeros((720, 1280, 3), dtype=np.uint8)) == []
+
+
+def test_fire_box_on_a_person_in_orange_is_dropped():
+    """A rescuer's high-visibility suit read as fire (Rescue_workers clip)."""
+    rescuer = {"x": 700, "y": 450, "w": 120, "h": 180}
+    hazards = [
+        {"class": "fire", "confidence": 0.63, "bbox": {"x": 706, "y": 449, "w": 120, "h": 178}},
+        {"class": "fire", "confidence": 0.70, "bbox": {"x": 100, "y": 100, "w": 200, "h": 150}},
+    ]
+    kept = detect._drop_fire_on_people(hazards, [rescuer])
+    assert [h["bbox"]["x"] for h in kept] == [100]
+
+
+def test_fire_beside_people_and_smoke_over_them_are_kept():
+    """Firefighters next to a burning building: the flames are barely covered."""
+    people = [{"x": 300, "y": 300, "w": 30, "h": 60}]
+    hazards = [
+        {"class": "fire", "confidence": 0.8, "bbox": {"x": 200, "y": 200, "w": 200, "h": 200}},
+        {"class": "smoke", "confidence": 0.6, "bbox": {"x": 290, "y": 290, "w": 50, "h": 80}},
+    ]
+    assert detect._drop_fire_on_people(hazards, people) == hazards
+
+
+def test_fire_box_covered_by_a_group_of_rescuers_is_dropped():
+    """No single person covers it, but together they do."""
+    group = [{"x": 0, "y": 0, "w": 50, "h": 100}, {"x": 50, "y": 0, "w": 50, "h": 100}]
+    hazards = [{"class": "fire", "confidence": 0.52, "bbox": {"x": 0, "y": 0, "w": 100, "h": 100}}]
+    assert detect._drop_fire_on_people(hazards, group) == []
