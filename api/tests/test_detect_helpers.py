@@ -90,3 +90,16 @@ def test_a_weak_body_box_over_rubble_does_not_swallow_a_sure_hand():
 def test_buried_detection_is_off_without_the_model(monkeypatch):
     monkeypatch.setattr(detect, "get_buried_ort_session", lambda: None)
     assert detect._run_buried(np.zeros((720, 1280, 3), dtype=np.uint8)) == []
+
+
+def test_posture_model_reading_goes_to_the_overlapping_person_only():
+    lying = {"bbox": {"x": 100, "y": 300, "w": 90, "h": 30}, "down": 0.95}
+    standing = {"bbox": {"x": 600, "y": 200, "w": 30, "h": 80}, "down": 0.01}
+    assert detect._model_down_for({"x": 105, "y": 298, "w": 85, "h": 34}, [lying, standing]) == 0.95
+    assert detect._model_down_for({"x": 598, "y": 205, "w": 32, "h": 76}, [lying, standing]) == 0.01
+    assert detect._model_down_for({"x": 900, "y": 500, "w": 30, "h": 80}, [lying, standing]) is None
+
+
+def test_posture_model_is_off_without_the_model(monkeypatch):
+    monkeypatch.setattr(detect, "get_casualty_ort_session", lambda: None)
+    assert detect._run_posture_model(np.zeros((720, 1280, 3), dtype=np.uint8)) == []

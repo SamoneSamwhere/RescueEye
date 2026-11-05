@@ -516,7 +516,12 @@ def judge(detection: dict, keypoints, frame_shape,
         return _judge_partly_buried(detection, frame_shape, monitor or _monitor, verdict)
 
     posture, posture_reason = (None, "posture_unavailable")
-    if keypoints is not None:
+    if detection.get("model_down") is not None:
+        # The casualty-posture detector, set by routers/detect.py only under an
+        # angled camera: trained on lying and standing people seen that way, it
+        # replaces the keypoint angle, which read close-up walkers as lying.
+        posture, posture_reason = float(detection["model_down"]), "posture_from_model"
+    elif keypoints is not None:
         posture, posture_reason = posture_from_keypoints(keypoints, bbox, pitch_deg)
     posture_trusted = posture is not None
     if posture is None:

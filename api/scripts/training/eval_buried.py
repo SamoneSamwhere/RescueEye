@@ -28,7 +28,7 @@ CLIPS = {
     # (demo_feed8 in the media library is the same file as rescue-patrol.)
     "DEMO_FEED10": API / "data/media/4089f8f8fd08_DEMO_FEED10.mp4",
     "demo_feed (flood, boat)": API / "data/media/7333187ceb29_demo_feed.mp4",
-    "vtest (pedestrians walking)": Path("C:/RescueEyeData/buried/eval/vtest.avi"),
+    "vtest (pedestrians walking)": Path("C:/RescueEyeData/evalclips/vtest.avi"),
 }
 UAV_SAR = API / "data/raw/downloads/uav_sar"
 THRESHOLDS = (0.3, 0.4, 0.5, 0.6, 0.7)

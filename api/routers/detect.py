@@ -29,6 +29,7 @@ from services.yolo_model import (
     PERSON_CLASS,
     get_coco_assist,
     get_buried_ort_session,
+    get_casualty_ort_session,
     get_coco_ort_session,
     get_fire_ort_names,
     get_fire_ort_session,
@@ -110,6 +111,11 @@ BURIED_CONF     = float(os.getenv("BURIED_CONF", "0.5"))
 # model's weak boxes over rubble (0.39 on a held-out test) otherwise swallowed
 # a hand the buried model was 0.89 sure of.
 BURIED_INSIDE_BODY = 0.5
+
+# Casualty-posture detector (services/yolo_model.py): boxes below this, as
+# upright or down, are not matched to anyone. A person it doesn't box keeps the
+# keypoint posture reading.
+CASUALTY_MODEL_CONF = float(os.getenv("CASUALTY_MODEL_CONF", "0.25"))
 SCENE_CLASSIFY  = os.getenv("SCENE_CLASSIFY", "true").lower() == "true"
 
 
@@ -594,6 +600,49 @@ def _run_buried(frame: np.ndarray) -> list[dict]:
             out.append({"class": "person", "confidence": round(float(conf[i]), 3),
                         "bbox": {"x": x, "y": y, "w": w, "h": h}, "partial": True})
     return out
+
+
+def _run_posture_model(frame: np.ndarray) -> list[dict]:
+    """
+    Person boxes from the casualty-posture detector, each with `down`: how much
+    of its upright-or-down score is down, 0..1. [] when the model isn't loaded.
+    The partial class is left to the buried-person model.
+    """
+    sess = get_casualty_ort_session()
+    if sess is None:
+        return []
+    try:
+        blob, scale, pad_x, pad_y = _blob(frame, _input_hw(sess, 960))
+        raw = ort_run(sess, blob)[0][0]   # [4+3, N]: upright, down, partial
+    except Exception as exc:
+        logger.warning(f"[detect] casualty-posture ORT failed: {exc}")
+        return []
+
+    upright, down = raw[4], raw[5]
+    conf = np.maximum(upright, down)
+    keep = conf >= CASUALTY_MODEL_CONF
+    if not keep.any():
+        return []
+    cx, cy, bw, bh = raw[0][keep], raw[1][keep], raw[2][keep], raw[3][keep]
+    conf, up, dn = conf[keep], upright[keep], down[keep]
+    boxes = np.stack([
+        ((cx - bw / 2) - pad_x) / scale, ((cy - bh / 2) - pad_y) / scale,
+        ((cx + bw / 2) - pad_x) / scale, ((cy + bh / 2) - pad_y) / scale,
+    ], axis=1)
+    out: list[dict] = []
+    for i in _nms(boxes, conf):
+        x, y = int(boxes[i][0]), int(boxes[i][1])
+        out.append({"bbox": {"x": x, "y": y, "w": int(boxes[i][2]) - x, "h": int(boxes[i][3]) - y},
+                    "down": float(dn[i] / (up[i] + dn[i] + 1e-6))})
+    return out
+
+
+def _model_down_for(bbox: dict, boxes: list[dict], iou_min: float = 0.3) -> float | None:
+    """The posture model's down share for the box that best overlaps `bbox`, if any does."""
+    best = max(boxes, key=lambda b: _iou(bbox, b["bbox"]), default=None)
+    if best is None or _iou(bbox, best["bbox"]) < iou_min:
+        return None
+    return round(best["down"], 3)
 
 
 def _inside(part: dict, body: dict) -> float:
@@ -1099,7 +1148,16 @@ def _analyse(jpeg: bytes, stream: StreamState, want_annotation: bool,
         stream.stillness.advance_camera(camera_motion, frame.shape)
         # Camera pitch (read above with the position) decides how posture is
         # measured at all — straight down, the angle of a torso means the
-        # opposite of what it means from the side.
+        # opposite of what it means from the side. Under an angled camera the
+        # casualty-posture detector reads it instead; straight down it can't
+        # tell a body lying flat from a standing one seen from the front.
+        if abs(pitch_deg) < casualty_gate.POSTURE_NADIR_PITCH_DEG and any(
+                not d.get("partial") for d in annotated):
+            posture_boxes = _run_posture_model(frame)
+            if posture_boxes:
+                for det in annotated:
+                    if not det.get("partial"):
+                        det["model_down"] = _model_down_for(det["bbox"], posture_boxes)
         for det in annotated:
             verdict = casualty_gate.judge(det, _keypoints_for(det["bbox"], poses),
                                           frame.shape, pitch_deg, monitor=stream.stillness)

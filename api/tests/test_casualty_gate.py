@@ -532,3 +532,30 @@ def test_a_partly_buried_responder_is_still_vetoed():
     responder_registry.report("r1", 10.3, 123.9)
     verdict = casualty.judge({**_hand(), "lat": 10.3, "lng": 123.9, "subject_located": True}, None, FRAME)
     assert not verdict.is_casualty and verdict.reasons == ["known_responder"]
+
+
+# ── Casualty-posture model ────────────────────────────────────────────────────
+
+def test_model_down_reading_replaces_the_keypoint_angle(monkeypatch):
+    # A close-up walker whose keypoints lean enough to read as lying: the
+    # posture model, which saw them standing, is what the gate goes by.
+    det = {"bbox": _box_for((100, 200), (260, 205)), "track_id": 1, "model_down": 0.02}
+    verdict = _judge_twice(monkeypatch, det, _kps((100, 200), (260, 205)))
+    assert verdict.is_casualty is False
+    assert verdict.posture == pytest.approx(0.02)
+    assert "posture_from_model" in verdict.reasons
+
+
+def test_model_down_reading_alone_can_promote_a_still_body(monkeypatch):
+    # Too small for the pose model: no keypoints, only the model's reading.
+    det = {"bbox": _bbox(w=40, h=18), "track_id": 1, "model_down": 0.96}
+    verdict = _judge_twice(monkeypatch, det, None)
+    assert verdict.is_casualty is True
+    assert "posture_from_model" in verdict.reasons
+
+
+def test_no_model_reading_falls_back_to_keypoints(monkeypatch):
+    det = {"bbox": _box_for((100, 200), (260, 205)), "track_id": 1, "model_down": None}
+    verdict = _judge_twice(monkeypatch, det, _kps((100, 200), (260, 205)))
+    assert verdict.is_casualty is True
+    assert "posture_from_pose" in verdict.reasons
