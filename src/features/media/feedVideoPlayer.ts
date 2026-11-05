@@ -66,6 +66,10 @@ export function playFeedVideo(url: string, canvas: HTMLCanvasElement, callbacks:
   let lastSent = -1
   let lastShown = -1
   let interval = 1000 / 30
+  // Gaps averaged so far. Clips run at 24, 25 or 30 fps, so the first gaps
+  // are weighted fully (1/n) and the average settles within a few frames
+  // rather than drifting toward the real rate over seconds.
+  let gaps = 0
 
   // Tell the server how far behind we are. Through the tunnel a backlog builds
   // where the server cannot see it; reporting the newest frame's send time
@@ -118,7 +122,8 @@ export function playFeedVideo(url: string, canvas: HTMLCanvasElement, callbacks:
     const gap = sentMs - lastSent
     let showMs = sentMs
     if (lastSent > 0 && gap > 0 && gap < 250) {
-      interval += 0.05 * (gap - interval)
+      gaps += 1
+      interval += Math.max(0.05, 1 / gaps) * (gap - interval)
       const predicted = lastShown + interval
       // Far off the prediction means a real pause (or a skip-ahead): follow it.
       showMs = Math.abs(sentMs - predicted) < interval ? predicted + 0.1 * (sentMs - predicted) : sentMs

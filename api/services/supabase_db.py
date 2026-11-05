@@ -16,6 +16,8 @@ from typing import Any
 
 import httpx
 
+from services.http_client import get_client
+
 
 class DatabaseNotConfigured(RuntimeError):
     pass
@@ -39,8 +41,9 @@ async def _request(method: str, table: str, *, params: dict | None = None, json:
     headers = {"apikey": key, "Authorization": f"Bearer {key}", "Content-Type": "application/json"}
     if prefer:
         headers["Prefer"] = prefer
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        response = await client.request(method, f"{url}/rest/v1/{table}", params=params, json=json, headers=headers)
+    client = await get_client()
+    response = await client.request(method, f"{url}/rest/v1/{table}", params=params, json=json,
+                                    headers=headers, timeout=10.0)
     if response.status_code >= 400:
         raise DatabaseError(f"{method} {table} failed ({response.status_code}): {response.text[:300]}")
     return response.json() if response.content else None

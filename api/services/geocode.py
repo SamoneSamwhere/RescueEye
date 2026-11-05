@@ -25,6 +25,8 @@ import unicodedata
 
 import httpx
 
+from services.http_client import get_client
+
 logger = logging.getLogger("rescueeye.geocode")
 
 ENABLED = os.getenv("GEOCODE_ENABLED", "true").strip().lower() == "true"
@@ -76,9 +78,10 @@ async def place_name(lat: float, lng: float) -> str | None:
             await asyncio.sleep(wait)
         _last_request = time.monotonic()
         try:
-            async with httpx.AsyncClient(timeout=TIMEOUT_S, headers={"User-Agent": USER_AGENT}) as client:
-                res = await client.get(URL, params={"format": "jsonv2", "lat": lat, "lon": lng,
-                                                    "zoom": 17, "addressdetails": 1})
+            client = await get_client()
+            res = await client.get(URL, params={"format": "jsonv2", "lat": lat, "lon": lng,
+                                                "zoom": 17, "addressdetails": 1},
+                                   headers={"User-Agent": USER_AGENT}, timeout=TIMEOUT_S)
             res.raise_for_status()
             place = format_place(res.json().get("address") or {})
         except (httpx.HTTPError, ValueError) as exc:

@@ -142,26 +142,27 @@ async def _maybe_create_incident(detection: dict) -> None:
         "structural_damage": "STRUCTURAL",
     }
     try:
-        import httpx  # type: ignore
-        async with httpx.AsyncClient(timeout=3.0) as client:
-            await client.post(
-                f"{NODE_SERVER_URL}/incidents",
-                json={
-                    "type":        class_to_type.get(detection["class"], "UNKNOWN"),
-                    "severity":    "HIGH" if detection["confidence"] >= 0.90 else "MEDIUM",
-                    "description": (
-                        f"AI detected {detection['class']} "
-                        f"(conf={detection['confidence']:.2f}) via {DRONE_CALLSIGN}"
-                    ),
-                    "reportedBy":    "AI_SYSTEM",
-                    # Where the drone spotted the casualty — the incident is
-                    # pinned here, and the map shows "spotted by <callsign>".
-                    "lat":           detection.get("lat"),
-                    "lng":           detection.get("lng"),
-                    "droneId":       DRONE_ID,
-                    "droneCallsign": DRONE_CALLSIGN,
-                },
-            )
+        from services.http_client import get_client
+        client = await get_client()
+        await client.post(
+            f"{NODE_SERVER_URL}/incidents",
+            timeout=3.0,
+            json={
+                "type":        class_to_type.get(detection["class"], "UNKNOWN"),
+                "severity":    "HIGH" if detection["confidence"] >= 0.90 else "MEDIUM",
+                "description": (
+                    f"AI detected {detection['class']} "
+                    f"(conf={detection['confidence']:.2f}) via {DRONE_CALLSIGN}"
+                ),
+                "reportedBy":    "AI_SYSTEM",
+                # Where the drone spotted the casualty — the incident is
+                # pinned here, and the map shows "spotted by <callsign>".
+                "lat":           detection.get("lat"),
+                "lng":           detection.get("lng"),
+                "droneId":       DRONE_ID,
+                "droneCallsign": DRONE_CALLSIGN,
+            },
+        )
     except Exception as exc:
         logger.debug(f"[detect] Incident bridge error (non-fatal): {exc}")
 
@@ -192,18 +193,19 @@ async def _send_ntfy_alert(detection: dict) -> None:
         f"Dispatch nearest field team immediately."
     )
     try:
-        import httpx
-        async with httpx.AsyncClient(timeout=4.0) as client:
-            await client.post(
-                f"https://ntfy.sh/{NTFY_TOPIC}",
-                content=body.encode(),
-                headers={
-                    "Title":    "RescueEye — Casualty Detected",
-                    "Priority": "urgent",
-                    "Tags":     "sos,rotating_light",
-                    "Click":    f"https://www.openstreetmap.org/?mlat={lat}&mlon={lng}&zoom=17",
-                },
-            )
+        from services.http_client import get_client
+        client = await get_client()
+        await client.post(
+            f"https://ntfy.sh/{NTFY_TOPIC}",
+            timeout=4.0,
+            content=body.encode(),
+            headers={
+                "Title":    "RescueEye — Casualty Detected",
+                "Priority": "urgent",
+                "Tags":     "sos,rotating_light",
+                "Click":    f"https://www.openstreetmap.org/?mlat={lat}&mlon={lng}&zoom=17",
+            },
+        )
         logger.info(f"[detect] ntfy alert sent → ntfy.sh/{NTFY_TOPIC} (conf={conf_pct}%)")
     except Exception as exc:
         logger.debug(f"[detect] ntfy error (non-fatal): {exc}")
