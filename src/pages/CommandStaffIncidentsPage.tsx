@@ -8,6 +8,7 @@ import { useCommandStaffData } from '../features/command-staff'
 import { mockDrones } from '../data/mockDrones'
 import { mockUsers } from '../data/mockUsers'
 import { sourceLabelFor } from '../lib/sourceLabel'
+import { incidentDetection } from '../types/detection'
 
 export function CommandStaffIncidentsPage() {
   const { incidents, detections, mediaAssets } = useCommandStaffData()
@@ -20,7 +21,7 @@ export function CommandStaffIncidentsPage() {
   const enrichedIncidents: EnrichedIncident[] = useMemo(() => {
     return incidents
       .map((incident): EnrichedIncident | null => {
-        const detection = detections.find((d) => d.id === incident.detectionId)
+        const detection = incidentDetection(detections, incident.detectionId)
         if (!detection) return null
         const verifiedBy = mockUsers.find((u) => u.id === incident.verifiedByUserId)
         const closedBy = incident.closedByUserId ? mockUsers.find((u) => u.id === incident.closedByUserId) : undefined

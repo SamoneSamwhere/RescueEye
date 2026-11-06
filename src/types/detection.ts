@@ -47,7 +47,12 @@ export interface Detection {
   damageClassification?: DamageClassification
   confidence: number
   boundingBox: BoundingBox
-  location: DetectionLocation
+  /**
+   * Where the subject is. Absent when the drone reported no position (DJI Fly
+   * sends no GPS): the detection is still raised for review, but it cannot be
+   * mapped or dispatched to until a position is known.
+   */
+  location?: DetectionLocation
   detectedAt: string
   validationStatus: DetectionValidationStatus
   /**
@@ -82,4 +87,21 @@ export interface Detection {
    */
   locationSource?: 'drone_gps' | 'pilot' | 'simulated'
   locationAccuracyM?: number
+}
+
+/** A detection that can be mapped and dispatched to. */
+export type LocatedDetection = Detection & { location: DetectionLocation }
+
+export function hasLocation(detection: Detection): detection is LocatedDetection {
+  return detection.location !== undefined
+}
+
+/**
+ * The detection behind an incident. Verification refuses a detection with no
+ * location (see verifyDetection), so every incident's detection has one; this
+ * states that for the type checker and skips anything that somehow lacks it.
+ */
+export function incidentDetection(detections: Detection[], detectionId: string): LocatedDetection | undefined {
+  const detection = detections.find((d) => d.id === detectionId)
+  return detection && hasLocation(detection) ? detection : undefined
 }

@@ -87,6 +87,11 @@ def _crop_snapshot(frame, bbox: dict) -> bytes | None:
 
 
 _store: Deque[StoredDetection] = deque(maxlen=MAX_STORED)
+# Demo casualties (POST /detections/demo) are kept apart and always listed
+# first. A live feed adds a casualty sighting every few seconds, and the web
+# app reads only the newest 50: a demo in the main buffer was pushed out of
+# view within ~5 minutes, before anyone had opened the page to see it.
+_demos: Deque[StoredDetection] = deque(maxlen=20)
 
 
 def add_detections(detections: list[dict], inference_time_ms: float,
@@ -126,7 +131,8 @@ def add_detections(detections: list[dict], inference_time_ms: float,
 
 
 def get_recent(limit: int = 20) -> list[dict]:
-    items = list(_store)[-limit:]
+    # Newest first after the reversal below, demos ahead of everything else.
+    items = list(_store)[-limit:] + list(_demos)
     return [
         {
             "id": d.id,
@@ -154,7 +160,7 @@ def get_recent(limit: int = 20) -> list[dict]:
 
 def get_snapshot(detection_id: str) -> bytes | None:
     """JPEG crop for one detection, or None once it has aged out of the buffer."""
-    for d in _store:
+    for d in (*_demos, *_store):
         if d.id == detection_id:
             return d.snapshot
     return None

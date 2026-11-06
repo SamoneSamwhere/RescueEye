@@ -17,6 +17,7 @@ import { useDetectionStore } from '../state/DetectionStore'
 import { useMissionStore } from '../state/MissionStore'
 import { responseTeamFor } from '../lib/responseTeams'
 import { fieldResponderMissionNavigatePath, ROUTES } from '../routes/paths'
+import { incidentDetection } from '../types/detection'
 
 export function FieldResponderMissionDetailPage() {
   const { missionId } = useParams<{ missionId: string }>()
@@ -32,7 +33,7 @@ export function FieldResponderMissionDetailPage() {
   const currentUser = session ? mockUsers.find((u) => u.id === session.id) : undefined
   const mission = missions.find((m) => m.id === missionId)
   const incident = mission ? incidents.find((i) => i.id === mission.incidentId) : undefined
-  const detection = incident ? detections.find((d) => d.id === incident.detectionId) : undefined
+  const detection = incident ? incidentDetection(detections, incident.detectionId) : undefined
 
   const notifications = session ? notificationsFor(allNotifications, session.id) : []
   // Everyone else Command Staff alerted for this incident who did not decline.

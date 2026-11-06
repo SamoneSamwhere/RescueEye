@@ -1,0 +1,15 @@
+{
+  "map50": 0.5342,
+  "map50_95": 0.2937,
+  "precision": 0.6146,
+  "recall": 0.5215,
+  "base": "casualty_v2.pt",
+  "dataset": "Okutama-Action (Lying -> down) + VisDrone + partly buried composites and SeaDronesSee swimmers + turned Okutama casualties and overhead whole-body composites",
+  "classes": [
+    "upright",
+    "down",
+    "partial"
+  ],
+  "imgsz": 960,
+  "trained_at": "2026-11-05T20:23:33Z"
+}

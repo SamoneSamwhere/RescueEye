@@ -20,6 +20,8 @@ const PLAYOUT_DELAY_MS = 120
 const OFFSET_WINDOW_MS = 4000
 /** Decoded frames waiting to be shown; beyond this the oldest are dropped. */
 const MAX_PENDING = 30
+/** How often the newest frame's send time is reported back. */
+const ACK_EVERY_MS = 250
 
 export async function canPlayFeedVideo(): Promise<boolean> {
   if (typeof VideoDecoder === 'undefined' || typeof EncodedVideoChunk === 'undefined') return false
@@ -64,6 +66,17 @@ export function playFeedVideo(url: string, canvas: HTMLCanvasElement, callbacks:
   let lastSent = -1
   let lastShown = -1
   let interval = 1000 / 30
+  // Gaps averaged so far. Clips run at 24, 25 or 30 fps, so the first gaps
+  // are weighted fully (1/n) and the average settles within a few frames
+  // rather than drifting toward the real rate over seconds.
+  let gaps = 0
+
+  // Tell the server how far behind we are. Through the tunnel a backlog builds
+  // where the server cannot see it; reporting the newest frame's send time
+  // lets it skip us ahead to the next keyframe once we fall too far behind.
+  const ackTimer = window.setInterval(() => {
+    if (lastSent > 0 && ws.readyState === WebSocket.OPEN) ws.send(String(lastSent))
+  }, ACK_EVERY_MS)
 
   const decoder = new VideoDecoder({
     output: (frame) => {
@@ -77,6 +90,7 @@ export function playFeedVideo(url: string, canvas: HTMLCanvasElement, callbacks:
     if (stopped) return
     stopped = true
     cancelAnimationFrame(raf)
+    window.clearInterval(ackTimer)
     ws.onmessage = ws.onclose = ws.onerror = null
     if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) ws.close()
     if (decoder.state !== 'closed') decoder.close()
@@ -108,7 +122,8 @@ export function playFeedVideo(url: string, canvas: HTMLCanvasElement, callbacks:
     const gap = sentMs - lastSent
     let showMs = sentMs
     if (lastSent > 0 && gap > 0 && gap < 250) {
-      interval += 0.05 * (gap - interval)
+      gaps += 1
+      interval += Math.max(0.05, 1 / gaps) * (gap - interval)
       const predicted = lastShown + interval
       // Far off the prediction means a real pause (or a skip-ahead): follow it.
       showMs = Math.abs(sentMs - predicted) < interval ? predicted + 0.1 * (sentMs - predicted) : sentMs

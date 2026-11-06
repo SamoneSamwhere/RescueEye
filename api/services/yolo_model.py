@@ -318,6 +318,70 @@ def get_fire_ort_names() -> list[str]:
     return _fire_ort_names
 
 
+# -- DirectML ONNX session for the partly-buried-person detector ---------------
+# The victim and pose models learned whole bodies; a hand showing out of rubble
+# is not one. This detector boxes just the part that shows (trained on COCO
+# body parts composited onto disaster scenes, see
+# scripts/training/prepare_buried_dataset.py). ONNX only, like the fire model.
+BURIED_DETECT_ENABLED = os.getenv("BURIED_DETECT", "true").lower() == "true"
+_buried_ort_session: Any = None
+_buried_meta: dict = {}
+
+
+def _load_buried_ort(onnx_path: str) -> None:
+    global _buried_ort_session, _buried_meta
+    try:
+        import onnxruntime as ort
+        providers = (["DmlExecutionProvider", "CPUExecutionProvider"]
+                     if _dml_available() else ["CPUExecutionProvider"])
+        opts = ort.SessionOptions()
+        opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        _buried_ort_session = ort.InferenceSession(onnx_path, sess_options=opts, providers=providers)
+        _buried_meta = _load_meta(MODELS_DIR / "buried_meta.json")
+        logger.info(f"[yolo] buried-person ONNX session ready - provider: "
+                    f"{_buried_ort_session.get_providers()[0]}")
+    except Exception as exc:
+        logger.warning(f"[yolo] buried-person ORT session failed ({exc}) - partial-body detection off")
+        _buried_ort_session = None
+
+
+def get_buried_ort_session() -> Any:
+    return _buried_ort_session
+
+
+# -- DirectML ONNX session for the casualty-posture detector ------------------
+# Three classes per person: upright, down (lying on the ground), partial. Its
+# "down" score is the casualty gate's posture reading under an angled camera,
+# where the keypoint rule read close-up walkers as lying (see
+# scripts/training/prepare_casualty_v2.py). Straight down it is not used: from
+# above, a body lying flat looks like a standing person seen from the front,
+# and the keypoint foreshortening rule handles that view.
+CASUALTY_MODEL_ENABLED = os.getenv("CASUALTY_MODEL", "true").lower() == "true"
+_casualty_ort_session: Any = None
+_casualty_meta: dict = {}
+
+
+def _load_casualty_ort(onnx_path: str) -> None:
+    global _casualty_ort_session, _casualty_meta
+    try:
+        import onnxruntime as ort
+        providers = (["DmlExecutionProvider", "CPUExecutionProvider"]
+                     if _dml_available() else ["CPUExecutionProvider"])
+        opts = ort.SessionOptions()
+        opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        _casualty_ort_session = ort.InferenceSession(onnx_path, sess_options=opts, providers=providers)
+        _casualty_meta = _load_meta(MODELS_DIR / "casualty_meta.json")
+        logger.info(f"[yolo] casualty-posture ONNX session ready - provider: "
+                    f"{_casualty_ort_session.get_providers()[0]}")
+    except Exception as exc:
+        logger.warning(f"[yolo] casualty-posture ORT session failed ({exc}) - keypoint posture only")
+        _casualty_ort_session = None
+
+
+def get_casualty_ort_session() -> Any:
+    return _casualty_ort_session
+
+
 def _resolve_victim_weights() -> tuple[str, bool]:
     """Return (weights_path, is_custom). Prefers ONNX over PT for faster CPU inference."""
     onnx = MODELS_DIR / "victim_best.onnx"
@@ -440,6 +504,20 @@ def load_all() -> None:
         logger.info(f"[yolo] no {fire_onnx.name} - fire/smoke boxes off "
                     "(train with scripts/training/train_models.py --fire-only)")
 
+    buried_onnx = MODELS_DIR / "buried_best.onnx"
+    if BURIED_DETECT_ENABLED and buried_onnx.exists():
+        _load_buried_ort(str(buried_onnx))
+    elif BURIED_DETECT_ENABLED:
+        logger.info(f"[yolo] no {buried_onnx.name} - partly buried people off "
+                    "(train with scripts/training/train_buried.py)")
+
+    casualty_onnx = MODELS_DIR / "casualty_best.onnx"
+    if CASUALTY_MODEL_ENABLED and casualty_onnx.exists():
+        _load_casualty_ort(str(casualty_onnx))
+    elif CASUALTY_MODEL_ENABLED:
+        logger.info(f"[yolo] no {casualty_onnx.name} - casualty posture from keypoints only "
+                    "(train with scripts/training/train_casualty.py)")
+
     if COCO_ASSIST_ENABLED:
         coco_onnx = Path(REPO_ROOT / os.environ["COCO_ASSIST_ONNX"] if os.getenv("COCO_ASSIST_ONNX") else base_weight("yolov8n.onnx"))
         if coco_onnx.exists():
@@ -548,6 +626,16 @@ def model_status() -> dict:
             "loaded":   _fire_ort_session is not None,
             "classes":  _fire_ort_names,
             "map50":    _fire_meta.get("map50"),
+        },
+        "buried_model": {
+            "enabled":  BURIED_DETECT_ENABLED,
+            "loaded":   _buried_ort_session is not None,
+            "map50":    _buried_meta.get("map50"),
+        },
+        "casualty_model": {
+            "enabled":  CASUALTY_MODEL_ENABLED,
+            "loaded":   _casualty_ort_session is not None,
+            "map50":    _casualty_meta.get("map50"),
         },
     }
 

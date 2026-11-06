@@ -90,7 +90,9 @@ export function DetectionDetailPanel({
               icon={MapPin}
               label="Location"
               value={[
-                `${detection.location.lat.toFixed(4)}, ${detection.location.lng.toFixed(4)}`,
+                detection.location
+                  ? `${detection.location.lat.toFixed(4)}, ${detection.location.lng.toFixed(4)}`
+                  : 'Unknown — the drone reported no position',
                 locationAccuracyText(detection),
               ]
                 .filter(Boolean)

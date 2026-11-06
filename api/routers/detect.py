@@ -28,6 +28,8 @@ from services.yolo_model import (
     DAMAGE_PROXY_CLASSES,
     PERSON_CLASS,
     get_coco_assist,
+    get_buried_ort_session,
+    get_casualty_ort_session,
     get_coco_ort_session,
     get_fire_ort_names,
     get_fire_ort_session,
@@ -97,6 +99,29 @@ REPORT_NON_CASUALTIES = os.getenv("REPORT_NON_CASUALTIES", "false").lower() == "
 # the live overlay needs no second request. Both are hazards to show, not
 # subjects to track: they skip the tracker, the store and the casualty alerts.
 FIRE_CONF       = float(os.getenv("FIRE_CONF", "0.35"))
+# A "fire" box mostly covered by people is a rescuer's orange suit: the D-Fire
+# detector was trained on flame photos and high-visibility orange looks like
+# flame to it. Measured on the library: real flames are at most 9% covered by
+# person boxes (firefighters beside a burning barn included), suit false
+# positives 32-100%. Smoke is exempt: real smoke drifts over people.
+FIRE_MAX_PERSON_COVER = float(os.getenv("FIRE_MAX_PERSON_COVER", "0.25"))
+
+# Partly buried people: only a hand, an arm, a head or a leg showing (see
+# services/yolo_model.py). Their boxes join the person boxes for tracking, and
+# the casualty gate treats them as casualties: someone half under rubble or
+# water needs rescue whatever their posture.
+BURIED_CONF     = float(os.getenv("BURIED_CONF", "0.5"))
+# A part box mostly inside a whole-body box is that person's own hand or head:
+# the body detector already has them, and the normal posture rules apply. Only
+# when the body box is at least as sure as the part box, though: the victim
+# model's weak boxes over rubble (0.39 on a held-out test) otherwise swallowed
+# a hand the buried model was 0.89 sure of.
+BURIED_INSIDE_BODY = 0.5
+
+# Casualty-posture detector (services/yolo_model.py): boxes below this, as
+# upright or down, are not matched to anyone. A person it doesn't box keeps the
+# keypoint posture reading.
+CASUALTY_MODEL_CONF = float(os.getenv("CASUALTY_MODEL_CONF", "0.25"))
 SCENE_CLASSIFY  = os.getenv("SCENE_CLASSIFY", "true").lower() == "true"
 
 
@@ -123,26 +148,27 @@ async def _maybe_create_incident(detection: dict) -> None:
         "structural_damage": "STRUCTURAL",
     }
     try:
-        import httpx  # type: ignore
-        async with httpx.AsyncClient(timeout=3.0) as client:
-            await client.post(
-                f"{NODE_SERVER_URL}/incidents",
-                json={
-                    "type":        class_to_type.get(detection["class"], "UNKNOWN"),
-                    "severity":    "HIGH" if detection["confidence"] >= 0.90 else "MEDIUM",
-                    "description": (
-                        f"AI detected {detection['class']} "
-                        f"(conf={detection['confidence']:.2f}) via {DRONE_CALLSIGN}"
-                    ),
-                    "reportedBy":    "AI_SYSTEM",
-                    # Where the drone spotted the casualty — the incident is
-                    # pinned here, and the map shows "spotted by <callsign>".
-                    "lat":           detection.get("lat"),
-                    "lng":           detection.get("lng"),
-                    "droneId":       DRONE_ID,
-                    "droneCallsign": DRONE_CALLSIGN,
-                },
-            )
+        from services.http_client import get_client
+        client = await get_client()
+        await client.post(
+            f"{NODE_SERVER_URL}/incidents",
+            timeout=3.0,
+            json={
+                "type":        class_to_type.get(detection["class"], "UNKNOWN"),
+                "severity":    "HIGH" if detection["confidence"] >= 0.90 else "MEDIUM",
+                "description": (
+                    f"AI detected {detection['class']} "
+                    f"(conf={detection['confidence']:.2f}) via {DRONE_CALLSIGN}"
+                ),
+                "reportedBy":    "AI_SYSTEM",
+                # Where the drone spotted the casualty — the incident is
+                # pinned here, and the map shows "spotted by <callsign>".
+                "lat":           detection.get("lat"),
+                "lng":           detection.get("lng"),
+                "droneId":       DRONE_ID,
+                "droneCallsign": DRONE_CALLSIGN,
+            },
+        )
     except Exception as exc:
         logger.debug(f"[detect] Incident bridge error (non-fatal): {exc}")
 
@@ -173,18 +199,19 @@ async def _send_ntfy_alert(detection: dict) -> None:
         f"Dispatch nearest field team immediately."
     )
     try:
-        import httpx
-        async with httpx.AsyncClient(timeout=4.0) as client:
-            await client.post(
-                f"https://ntfy.sh/{NTFY_TOPIC}",
-                content=body.encode(),
-                headers={
-                    "Title":    "RescueEye — Casualty Detected",
-                    "Priority": "urgent",
-                    "Tags":     "sos,rotating_light",
-                    "Click":    f"https://www.openstreetmap.org/?mlat={lat}&mlon={lng}&zoom=17",
-                },
-            )
+        from services.http_client import get_client
+        client = await get_client()
+        await client.post(
+            f"https://ntfy.sh/{NTFY_TOPIC}",
+            timeout=4.0,
+            content=body.encode(),
+            headers={
+                "Title":    "RescueEye — Casualty Detected",
+                "Priority": "urgent",
+                "Tags":     "sos,rotating_light",
+                "Click":    f"https://www.openstreetmap.org/?mlat={lat}&mlon={lng}&zoom=17",
+            },
+        )
         logger.info(f"[detect] ntfy alert sent → ntfy.sh/{NTFY_TOPIC} (conf={conf_pct}%)")
     except Exception as exc:
         logger.debug(f"[detect] ntfy error (non-fatal): {exc}")
@@ -548,6 +575,119 @@ def _run_hazards(frame: np.ndarray) -> list[dict]:
                 "bbox":       {"x": x, "y": y, "w": w, "h": h},
             })
     return out
+
+
+def _person_cover(box: dict, people: list[dict]) -> float:
+    """Share of `box` covered by the union of the `people` boxes."""
+    w, h = box["w"], box["h"]
+    if w <= 0 or h <= 0:
+        return 0.0
+    mask = np.zeros((h, w), bool)
+    for p in people:
+        x0, y0 = max(0, p["x"] - box["x"]), max(0, p["y"] - box["y"])
+        x1, y1 = min(w, p["x"] + p["w"] - box["x"]), min(h, p["y"] + p["h"] - box["y"])
+        if x1 > x0 and y1 > y0:
+            mask[y0:y1, x0:x1] = True
+    return float(mask.mean())
+
+
+def _drop_fire_on_people(hazards: list[dict], people: list[dict]) -> list[dict]:
+    """Removes "fire" boxes that are really people in orange (see FIRE_MAX_PERSON_COVER)."""
+    if not people:
+        return hazards
+    return [h for h in hazards
+            if h["class"] != "fire" or _person_cover(h["bbox"], people) < FIRE_MAX_PERSON_COVER]
+
+
+def _run_buried(frame: np.ndarray) -> list[dict]:
+    """Boxes around the visible part of partly buried people, or [] when the model isn't loaded."""
+    sess = get_buried_ort_session()
+    if sess is None:
+        return []
+    try:
+        blob, scale, pad_x, pad_y = _blob(frame, _input_hw(sess, 1280))
+        raw = ort_run(sess, blob)[0][0]   # [4+1, N]
+    except Exception as exc:
+        logger.warning(f"[detect] buried-person ORT failed: {exc}")
+        return []
+
+    scores = raw[4]
+    keep = scores >= BURIED_CONF
+    if not keep.any():
+        return []
+    cx, cy, bw, bh = raw[0][keep], raw[1][keep], raw[2][keep], raw[3][keep]
+    conf = scores[keep]
+    boxes = np.stack([
+        ((cx - bw / 2) - pad_x) / scale, ((cy - bh / 2) - pad_y) / scale,
+        ((cx + bw / 2) - pad_x) / scale, ((cy + bh / 2) - pad_y) / scale,
+    ], axis=1)
+    fh, fw = frame.shape[:2]
+    out: list[dict] = []
+    for i in _nms(boxes, conf):
+        x, y = max(0, int(boxes[i][0])), max(0, int(boxes[i][1]))
+        w, h = min(fw, int(boxes[i][2])) - x, min(fh, int(boxes[i][3])) - y
+        if w > 0 and h > 0:
+            out.append({"class": "person", "confidence": round(float(conf[i]), 3),
+                        "bbox": {"x": x, "y": y, "w": w, "h": h}, "partial": True})
+    return out
+
+
+def _run_posture_model(frame: np.ndarray) -> list[dict]:
+    """
+    Person boxes from the casualty-posture detector, each with `down`: how much
+    of its upright-or-down score is down, 0..1. [] when the model isn't loaded.
+    The partial class is left to the buried-person model.
+    """
+    sess = get_casualty_ort_session()
+    if sess is None:
+        return []
+    try:
+        blob, scale, pad_x, pad_y = _blob(frame, _input_hw(sess, 960))
+        raw = ort_run(sess, blob)[0][0]   # [4+3, N]: upright, down, partial
+    except Exception as exc:
+        logger.warning(f"[detect] casualty-posture ORT failed: {exc}")
+        return []
+
+    upright, down = raw[4], raw[5]
+    conf = np.maximum(upright, down)
+    keep = conf >= CASUALTY_MODEL_CONF
+    if not keep.any():
+        return []
+    cx, cy, bw, bh = raw[0][keep], raw[1][keep], raw[2][keep], raw[3][keep]
+    conf, up, dn = conf[keep], upright[keep], down[keep]
+    boxes = np.stack([
+        ((cx - bw / 2) - pad_x) / scale, ((cy - bh / 2) - pad_y) / scale,
+        ((cx + bw / 2) - pad_x) / scale, ((cy + bh / 2) - pad_y) / scale,
+    ], axis=1)
+    out: list[dict] = []
+    for i in _nms(boxes, conf):
+        x, y = int(boxes[i][0]), int(boxes[i][1])
+        out.append({"bbox": {"x": x, "y": y, "w": int(boxes[i][2]) - x, "h": int(boxes[i][3]) - y},
+                    "down": float(dn[i] / (up[i] + dn[i] + 1e-6))})
+    return out
+
+
+def _model_down_for(bbox: dict, boxes: list[dict], iou_min: float = 0.3) -> float | None:
+    """The posture model's down share for the box that best overlaps `bbox`, if any does."""
+    best = max(boxes, key=lambda b: _iou(bbox, b["bbox"]), default=None)
+    if best is None or _iou(bbox, best["bbox"]) < iou_min:
+        return None
+    return round(best["down"], 3)
+
+
+def _inside(part: dict, body: dict) -> float:
+    """Fraction of `part`'s area that lies inside `body`."""
+    ix = max(0, min(part["x"] + part["w"], body["x"] + body["w"]) - max(part["x"], body["x"]))
+    iy = max(0, min(part["y"] + part["h"], body["y"] + body["h"]) - max(part["y"], body["y"]))
+    area = part["w"] * part["h"]
+    return ix * iy / area if area > 0 else 0.0
+
+
+def _partly_buried(parts: list[dict], bodies: list[dict]) -> list[dict]:
+    """The part boxes that don't belong to a person the body detectors already see."""
+    return [p for p in parts
+            if not any(_inside(p["bbox"], b["bbox"]) >= BURIED_INSIDE_BODY
+                       and b["confidence"] >= p["confidence"] for b in bodies)]
 
 
 def _run_coco_assist(frame: np.ndarray) -> list[dict]:
@@ -952,6 +1092,8 @@ def _analyse(jpeg: bytes, stream: StreamState, want_annotation: bool,
 
     with stream.lock:
         detections, inference_ms, poses = _run_victim(frame)
+        buried = _partly_buried(_run_buried(frame), detections)
+        detections = detections + buried
 
         # ── SORT tracking — assign persistent IDs via Kalman filter ─────────
         fh, fw = frame.shape[:2]
@@ -980,6 +1122,10 @@ def _analyse(jpeg: bytes, stream: StreamState, want_annotation: bool,
                         "h": min(fh - max(0, int(y1)), int(y2 - y1)),
                     },
                 })
+                # The tracker rebuilds boxes, so whether this one is a partly
+                # buried person is matched back by overlap.
+                detections[-1]["partial"] = any(
+                    _iou(detections[-1]["bbox"], b["bbox"]) >= 0.3 for b in buried)
         else:
             stream.tracker.update(np.empty((0, 5), dtype=np.float32))
 
@@ -1032,7 +1178,16 @@ def _analyse(jpeg: bytes, stream: StreamState, want_annotation: bool,
         stream.stillness.advance_camera(camera_motion, frame.shape)
         # Camera pitch (read above with the position) decides how posture is
         # measured at all — straight down, the angle of a torso means the
-        # opposite of what it means from the side.
+        # opposite of what it means from the side. Under an angled camera the
+        # casualty-posture detector reads it instead; straight down it can't
+        # tell a body lying flat from a standing one seen from the front.
+        if abs(pitch_deg) < casualty_gate.POSTURE_NADIR_PITCH_DEG and any(
+                not d.get("partial") for d in annotated):
+            posture_boxes = _run_posture_model(frame)
+            if posture_boxes:
+                for det in annotated:
+                    if not det.get("partial"):
+                        det["model_down"] = _model_down_for(det["bbox"], posture_boxes)
         for det in annotated:
             verdict = casualty_gate.judge(det, _keypoints_for(det["bbox"], poses),
                                           frame.shape, pitch_deg, monitor=stream.stillness)
@@ -1044,7 +1199,7 @@ def _analyse(jpeg: bytes, stream: StreamState, want_annotation: bool,
         # Run on the original frame, never the thermal display copy: both
         # models were trained on colour, and flame is the one thing the
         # inferno LUT would make look like everything else.
-        hazards = _run_hazards(frame)
+        hazards = _drop_fire_on_people(_run_hazards(frame), [d["bbox"] for d in annotated])
         if SCENE_CLASSIFY and time.monotonic() - stream.scene_at >= SCENE_INTERVAL_S:
             try:
                 stream.scene = classify_frame(frame)

@@ -88,14 +88,15 @@ function toCategory(cls: string): DetectionCategory {
  * escalate. That transparency is the point: a silently dropped box looks like
  * a missed detection.
  */
-/**
- * A casualty with no position cannot be put on the map or dispatched to, so it
- * stays a box on the live feed (which says the drone's location is unknown)
- * instead of entering the review queue at a made-up point.
- */
-function isReviewable(d: ApiDetection): d is ApiDetection & { lat: number; lng: number } {
-  return d.class !== 'person' && d.lat !== null && d.lng !== null
+function isReviewable(d: ApiDetection): boolean {
+  if (d.class === 'person') return false
+  // A casualty is raised for review only once the detector is 75% sure: below
+  // that it stays a box on the live overlay. Demo casualties are created at 88%.
+  return d.class !== 'casualty' || d.confidence >= CASUALTY_REVIEW_CONFIDENCE
 }
+
+/** Detector confidence at which a casualty enters Detection Review (and pops up). */
+export const CASUALTY_REVIEW_CONFIDENCE = 0.75
 
 /**
  * Pixel box -> percentage box. The review UI positions the overlay with
@@ -113,7 +114,7 @@ function toPercentBox(d: ApiDetection): BoundingBox {
   }
 }
 
-export function toDetection(d: ApiDetection & { lat: number; lng: number }, mediaAssetId: string): Detection {
+export function toDetection(d: ApiDetection, mediaAssetId: string): Detection {
   const category = toCategory(d.class)
   return {
     // Keyed by subject, not by frame: re-detecting the same casualty updates
@@ -126,7 +127,9 @@ export function toDetection(d: ApiDetection & { lat: number; lng: number }, medi
     damageClassification: category === 'DAMAGE' ? DAMAGE_BY_CLASS[d.class] : undefined,
     confidence: d.confidence,
     boundingBox: toPercentBox(d),
-    location: { lat: d.lat, lng: d.lng },
+    // No position (DJI Fly sends no GPS): still raised for review, never at a
+    // made-up point. It cannot be verified into an incident until it has one.
+    location: d.lat !== null && d.lng !== null ? { lat: d.lat, lng: d.lng } : undefined,
     detectedAt: d.timestamp,
     validationStatus: 'PENDING',
     snapshotUrl: d.has_snapshot ? detectionSnapshotUrl(d.id) : undefined,
@@ -200,6 +203,10 @@ function isSameCasualty(a: Detection, b: Detection): boolean {
   return (
     a.category === 'CASUALTY' &&
     b.category === 'CASUALTY' &&
+    // Without positions, distance says nothing: subjects are told apart by
+    // their tracker id instead (the record id), so never merge them here.
+    !!a.location &&
+    !!b.location &&
     distanceKm(a.location, b.location) <= SAME_CASUALTY_RADIUS_KM
   )
 }
@@ -272,8 +279,9 @@ export function useLiveDetections({
         byId.get(next.id) ??
         current.find((d) => d.validationStatus === 'PENDING' && isSameCasualty(d, next)) ??
         // At the cap, a new sighting refreshes the casualty already under
-        // review rather than queueing behind it.
-        (next.category === 'CASUALTY' && pendingCasualties >= MAX_PENDING_CASUALTIES
+        // review rather than queueing behind it. A demo casualty (POST
+        // /detections/demo) was asked for by name and is always its own.
+        (next.category === 'CASUALTY' && !item.id.startsWith('demo-') && pendingCasualties >= MAX_PENDING_CASUALTIES
           ? current.find((d) => d.category === 'CASUALTY' && d.validationStatus === 'PENDING')
           : undefined)
 
@@ -291,7 +299,7 @@ export function useLiveDetections({
         patch(already.id, {
           confidence: next.confidence,
           boundingBox: next.boundingBox,
-          location: next.location,
+          location: next.location ?? already.location,
           detectedAt: next.detectedAt,
           snapshotUrl: next.snapshotUrl,
           // The verdict moves with the evidence — a casualty scores ~0.8 on

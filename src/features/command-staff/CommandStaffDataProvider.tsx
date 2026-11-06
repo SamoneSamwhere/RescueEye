@@ -5,7 +5,7 @@ import { now } from '../../lib/now'
 import { generateId } from '../../lib/id'
 import { runMockDetection } from '../../lib/mockAiService'
 import { ACTIVE_MISSION_STATUSES } from '../../lib/missionStatus'
-import type { Detection } from '../../types/detection'
+import { hasLocation, type Detection } from '../../types/detection'
 import type { Incident, IncidentPriority } from '../../types/incident'
 import type { Mission } from '../../types/mission'
 import type { MediaAsset, MediaSourceType } from '../../types/media'
@@ -317,7 +317,7 @@ export function CommandStaffDataProvider({ children }: { children: ReactNode }) 
     addMediaAsset(newAsset)
 
     // Center newly generated detections on this agency's own existing detections when it has any, rather than a single global point.
-    const areaCenter = detections.length > 0 ? averageLocation(detections.map((d) => d.location)) : DEFAULT_AREA_CENTER
+    const areaCenter = detections.length > 0 ? averageLocation(detections.filter(hasLocation).map((d) => d.location)) : DEFAULT_AREA_CENTER
 
     const newDetection: Detection = {
       id: generateId('det'),
@@ -338,6 +338,11 @@ export function CommandStaffDataProvider({ children }: { children: ReactNode }) 
     if (!session || !agencyId) return null
     const detection = detections.find((d) => d.id === detectionId)
     if (!detection || detection.validationStatus !== 'PENDING') return null
+    // An incident is a place responders go. With no position there is nowhere
+    // to send them, so the detection stays pending (it can still be rejected).
+    if (!hasLocation(detection)) {
+      throw new Error('This detection has no location (the drone sent no GPS), so it cannot become an incident yet.')
+    }
 
     // A real account records the incident in the database first, and uses its
     // row id as the incident id everywhere: alerts must reference an incident

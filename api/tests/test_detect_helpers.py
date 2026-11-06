@@ -72,3 +72,62 @@ def test_apply_thermal_preserves_frame_dimensions():
     frame = np.random.randint(0, 255, (20, 30, 3), dtype=np.uint8)
     thermal = detect._apply_thermal(frame)
     assert thermal.shape == (20, 30, 3)
+
+
+def test_a_hand_on_a_visible_body_is_left_to_the_body_detector():
+    body = {"bbox": {"x": 100, "y": 100, "w": 80, "h": 200}, "confidence": 0.8}
+    own_hand = {"bbox": {"x": 160, "y": 180, "w": 25, "h": 25}, "confidence": 0.6, "partial": True}
+    buried_hand = {"bbox": {"x": 600, "y": 400, "w": 20, "h": 20}, "confidence": 0.6, "partial": True}
+    assert detect._partly_buried([own_hand, buried_hand], [body]) == [buried_hand]
+
+
+def test_a_weak_body_box_over_rubble_does_not_swallow_a_sure_hand():
+    rubble = {"bbox": {"x": 665, "y": 0, "w": 449, "h": 349}, "confidence": 0.39}
+    hand = {"bbox": {"x": 681, "y": 237, "w": 99, "h": 95}, "confidence": 0.89, "partial": True}
+    assert detect._partly_buried([hand], [rubble]) == [hand]
+
+
+def test_buried_detection_is_off_without_the_model(monkeypatch):
+    monkeypatch.setattr(detect, "get_buried_ort_session", lambda: None)
+    assert detect._run_buried(np.zeros((720, 1280, 3), dtype=np.uint8)) == []
+
+
+def test_posture_model_reading_goes_to_the_overlapping_person_only():
+    lying = {"bbox": {"x": 100, "y": 300, "w": 90, "h": 30}, "down": 0.95}
+    standing = {"bbox": {"x": 600, "y": 200, "w": 30, "h": 80}, "down": 0.01}
+    assert detect._model_down_for({"x": 105, "y": 298, "w": 85, "h": 34}, [lying, standing]) == 0.95
+    assert detect._model_down_for({"x": 598, "y": 205, "w": 32, "h": 76}, [lying, standing]) == 0.01
+    assert detect._model_down_for({"x": 900, "y": 500, "w": 30, "h": 80}, [lying, standing]) is None
+
+
+def test_posture_model_is_off_without_the_model(monkeypatch):
+    monkeypatch.setattr(detect, "get_casualty_ort_session", lambda: None)
+    assert detect._run_posture_model(np.zeros((720, 1280, 3), dtype=np.uint8)) == []
+
+
+def test_fire_box_on_a_person_in_orange_is_dropped():
+    """A rescuer's high-visibility suit read as fire (Rescue_workers clip)."""
+    rescuer = {"x": 700, "y": 450, "w": 120, "h": 180}
+    hazards = [
+        {"class": "fire", "confidence": 0.63, "bbox": {"x": 706, "y": 449, "w": 120, "h": 178}},
+        {"class": "fire", "confidence": 0.70, "bbox": {"x": 100, "y": 100, "w": 200, "h": 150}},
+    ]
+    kept = detect._drop_fire_on_people(hazards, [rescuer])
+    assert [h["bbox"]["x"] for h in kept] == [100]
+
+
+def test_fire_beside_people_and_smoke_over_them_are_kept():
+    """Firefighters next to a burning building: the flames are barely covered."""
+    people = [{"x": 300, "y": 300, "w": 30, "h": 60}]
+    hazards = [
+        {"class": "fire", "confidence": 0.8, "bbox": {"x": 200, "y": 200, "w": 200, "h": 200}},
+        {"class": "smoke", "confidence": 0.6, "bbox": {"x": 290, "y": 290, "w": 50, "h": 80}},
+    ]
+    assert detect._drop_fire_on_people(hazards, people) == hazards
+
+
+def test_fire_box_covered_by_a_group_of_rescuers_is_dropped():
+    """No single person covers it, but together they do."""
+    group = [{"x": 0, "y": 0, "w": 50, "h": 100}, {"x": 50, "y": 0, "w": 50, "h": 100}]
+    hazards = [{"class": "fire", "confidence": 0.52, "bbox": {"x": 0, "y": 0, "w": 100, "h": 100}}]
+    assert detect._drop_fire_on_people(hazards, group) == []

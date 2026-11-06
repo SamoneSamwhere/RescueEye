@@ -14,7 +14,10 @@ them starts dropping frames, which is worse than refusing the fifth.
 import functools
 import io
 import logging
+import math
 import os
+import queue
+import re
 import subprocess
 import threading
 import time
@@ -127,24 +130,43 @@ def _build_ffmpeg_cmd(source: str, fps: float) -> list[str]:
         source = _normalise_listen_source(source)
         cmd += ["-listen", "1"]
     if not _is_network_source(source):
-        # -re paces file playback to real time; omit for live network sources.
         # -stream_loop loops inside the one process: the producer used to reach
         # EOF, tear FFmpeg down and start it again, which froze a demo clip for
         # about a second every time it wrapped. Looping here makes the seam
         # invisible and leaves the restart path for genuine failures.
-        cmd += ["-stream_loop", "-1", "-re"]
+        #
+        # No -re: FFmpeg's real-time pacing sleeps on the Windows timer, which
+        # ticks every 15.6 ms, so a 25 fps clip came out 31 and 47 ms apart
+        # instead of an even 40. The producer paces file frames itself
+        # (_FramePacer); the pipe holds FFmpeg back meanwhile.
+        cmd += ["-stream_loop", "-1"]
     # -1 derives the height from the aspect ratio. (-2, which would also force
     # an even height, is rejected by some FFmpeg builds with "Size values less
     # than -1 are not acceptable".) min() leaves a source already narrower than
     # the cap untouched rather than upscaling it.
-    vf = f"fps={fps},scale='min({FEED_MAX_WIDTH},iw)':-1"
+    #
+    # Frame rate: drop frames to stay at or under `fps`, never repeat them. The
+    # fps filter used here before forced every source to exactly `fps`, so a
+    # 25 fps clip (most of the library) or a 24 fps one had every 5th/4th frame
+    # shown twice - a hitch five or six times a second that read as stutter in
+    # both the live view and Media Library monitoring. This select keeps a
+    # frame once at least 0.8 of a frame interval has passed since the last
+    # kept one (by the video's own timestamps, not arrival time): 24/25/30 fps
+    # pass untouched, 50/60 fps drop exactly every other frame. The lt() term
+    # resumes at once if timestamps ever go backwards (a loop seam) instead of
+    # waiting for them to catch up.
+    min_gap = 0.8 / fps
+    keep = f"select='isnan(prev_selected_t)+gte(t-prev_selected_t,{min_gap:.4f})+lt(t,prev_selected_t)'"
+    vf = f"{keep},scale='min({FEED_MAX_WIDTH},iw)':-1"
     # JPEG quality of the frames FFmpeg hands us (2 = best, 31 = worst). These
     # frames are now served to the browser as-is rather than re-encoded, so the
     # setting decides bytes on the wire as well as encode cost. q3 is visually
     # lossless and roughly 2.5x the size of q6 for no benefit anyone can see at
     # 720p, and that extra bandwidth was costing delivered frames.
     quality = os.getenv("FEED_JPEG_QUALITY", "6")
-    cmd += ["-i", source, "-vf", vf, "-f", "image2pipe",
+    # -vsync 0: pass the kept frames through as they are. Without it the muxer
+    # would pad the stream back out to a constant rate with repeated frames.
+    cmd += ["-i", source, "-vf", vf, "-vsync", "0", "-f", "image2pipe",
             "-vcodec", "mjpeg", "-q:v", quality, "pipe:1"]
     return cmd
 
@@ -326,28 +348,129 @@ def _synthetic_producer(feed: Feed, fps: float):
     feed.active = False
 
 
+def _source_fps(source: str) -> float | None:
+    """A file's frame rate as FFmpeg reports it ("25 fps"), or None."""
+    try:
+        out = subprocess.run([_ffmpeg_binary(), "-hide_banner", "-i", source],
+                             capture_output=True, text=True, timeout=15).stderr
+    except (OSError, subprocess.SubprocessError):
+        return None
+    m = re.search(r"Video:.*?(\d+(?:\.\d+)?) fps", out)
+    return float(m.group(1)) if m and float(m.group(1)) > 0 else None
+
+
+def output_fps(source_fps: float | None, cap: float) -> float:
+    """
+    The rate the select filter in _build_ffmpeg_cmd leaves: every k-th frame,
+    k the smallest step at least 0.8 of a `cap` interval long.
+    """
+    if not source_fps:
+        return cap
+    k = max(1, math.ceil(0.8 * source_fps / cap - 1e-9))
+    return source_fps / k
+
+
+class _FramePacer:
+    """
+    Releases frames at an even interval. Falls back to the current time after
+    a stall instead of bursting to catch up, which would replay the stall as a
+    fast-forward.
+    """
+
+    def __init__(self, fps: float):
+        self.interval = 1.0 / fps
+        self.next_t: float | None = None
+
+    def wait(self) -> None:
+        now = time.perf_counter()
+        if self.next_t is None or now - self.next_t > 0.25:
+            self.next_t = now
+        elif self.next_t > now:
+            time.sleep(self.next_t - now)
+        self.next_t += self.interval
+
+
+# Frames read ahead of playback for a file feed: ~0.3 s at 25 fps.
+READ_AHEAD_FRAMES = 8
+
+
+def _jpeg_frames(stream, stop_event: threading.Event):
+    """The JPEG frames in FFmpeg's image2pipe output, until it ends or `stop_event`."""
+    buf = b""
+    while not stop_event.is_set():
+        chunk = stream.read(65536)
+        if not chunk:
+            return
+        buf += chunk
+        while True:
+            s = buf.find(b"\xff\xd8")
+            e = buf.find(b"\xff\xd9", s + 2)
+            if s == -1 or e == -1:
+                break
+            yield buf[s:e + 2]
+            buf = buf[e + 2:]
+
+
+def _read_ahead(stream, stop_event: threading.Event, ahead: queue.Queue) -> None:
+    """Fills `ahead` with frames; None marks the end of the stream."""
+    try:
+        for frame in _jpeg_frames(stream, stop_event):
+            while not stop_event.is_set():
+                try:
+                    ahead.put(frame, timeout=0.5)
+                    break
+                except queue.Full:
+                    pass
+    except (OSError, ValueError):
+        pass
+    finally:
+        # Always deliver the end marker, making room if the queue is full, so
+        # the consumer's get() returns.
+        while True:
+            try:
+                ahead.put_nowait(None)
+                break
+            except queue.Full:
+                try:
+                    ahead.get_nowait()
+                except queue.Empty:
+                    pass
+
+
 def _ffmpeg_producer(feed: Feed, fps: float):
     cmd = _build_ffmpeg_cmd(feed.source, fps)
     logger.info(f"[feed:{feed.id}] FFmpeg: {' '.join(cmd)}")
+    # A file has no real-time pace of its own (see _build_ffmpeg_cmd); a live
+    # source arrives at the camera's.
+    pacer = None
+    if not _is_network_source(feed.source) and not _is_listen_source(feed.source):
+        out_fps = output_fps(_source_fps(feed.source), fps)
+        pacer = _FramePacer(out_fps)
+        logger.info(f"[feed:{feed.id}] playing at {out_fps:.2f} fps")
     feed.producer = "ffmpeg"
     feed.active = True
     try:
         while not feed.stop_event.is_set():
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
             feed.proc = proc
-            buf = b""
-            while not feed.stop_event.is_set():
-                chunk = proc.stdout.read(65536)
-                if not chunk:
-                    break
-                buf += chunk
-                while True:
-                    s = buf.find(b"\xff\xd8")
-                    e = buf.find(b"\xff\xd9", s + 2)
-                    if s == -1 or e == -1:
+            if pacer is None:
+                for frame in _jpeg_frames(proc.stdout, feed.stop_event):
+                    feed.publish(frame)
+            else:
+                # A few frames read ahead, so the moment FFmpeg spends reopening
+                # the clip at its loop point (~100 ms) is played through rather
+                # than shown as a pause.
+                ahead: queue.Queue = queue.Queue(maxsize=READ_AHEAD_FRAMES)
+                threading.Thread(target=_read_ahead, args=(proc.stdout, feed.stop_event, ahead),
+                                 daemon=True).start()
+                while not feed.stop_event.is_set():
+                    frame = ahead.get()
+                    if frame is None:
                         break
-                    feed.publish(buf[s:e + 2])
-                    buf = buf[e + 2:]
+                    pacer.wait()
+                    if feed.stop_event.is_set():
+                        break
+                    feed.publish(frame)
             proc.wait()
             if feed.stop_event.is_set():
                 break

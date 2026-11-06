@@ -24,6 +24,7 @@ import { notificationsFor } from '../lib/notifications'
 import { ACTIVE_MISSION_STATUSES } from '../lib/missionStatus'
 import { responseTeamFor } from '../lib/responseTeams'
 import { fieldResponderMissionDetailPath } from '../routes/paths'
+import { incidentDetection } from '../types/detection'
 
 /**
  * The responder's own operational picture: themselves, the incident they have
@@ -58,7 +59,7 @@ export function FieldResponderMapPage() {
     if (!session) return []
 
     const incident = myMission ? incidents.find((i) => i.id === myMission.incidentId) : undefined
-    const detection = incident ? detections.find((d) => d.id === incident.detectionId) : undefined
+    const detection = incident ? incidentDetection(detections, incident.detectionId) : undefined
     const incidentMarker: IncidentMapMarker[] =
       incident && detection
         ? [
@@ -123,7 +124,7 @@ export function FieldResponderMapPage() {
   const selectedMarker = markers.find((m) => m.id === selectedId) ?? null
 
   const missionIncident = myMission ? incidents.find((i) => i.id === myMission.incidentId) : undefined
-  const missionDetection = missionIncident ? detections.find((d) => d.id === missionIncident.detectionId) : undefined
+  const missionDetection = missionIncident ? incidentDetection(detections, missionIncident.detectionId) : undefined
   const teamSize = myMission ? (responseTeamFor(allMissions, myMission.incidentId)?.members.length ?? 0) : 0
   const myLocation = location.position ?? (session ? mockUsers.find((u) => u.id === session.id)?.currentLocation : undefined)
   const distance =

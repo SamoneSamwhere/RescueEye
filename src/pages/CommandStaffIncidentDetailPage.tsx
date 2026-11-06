@@ -45,6 +45,7 @@ import { useAlerts, ALERT_TYPE_LABEL, ALERT_STATUS_LABEL, ALERT_STATUS_TONE } fr
 import type { AlertRecord, AlertType } from '../features/alerts'
 import { getAgencyResponders } from '../db/incidents'
 import { isDbId } from '../lib/incidentClassification'
+import { incidentDetection } from '../types/detection'
 
 const CHANNEL_ORDER: AlertType[] = ['SMS', 'PUSH', 'DASHBOARD']
 
@@ -61,7 +62,7 @@ export function CommandStaffIncidentDetailPage() {
   const { incidents, detections, missions, mediaAssets, closeIncident } = useCommandStaffData()
 
   const incident = incidents.find((i) => i.id === incidentId) ?? null
-  const detection = incident ? (detections.find((d) => d.id === incident.detectionId) ?? null) : null
+  const detection = incident ? (incidentDetection(detections, incident.detectionId) ?? null) : null
 
   const sourceLabel = detection ? sourceLabelFor(detection.mediaAssetId, mediaAssets, mockDrones) : ''
   const timelineEvents = useIncidentTimeline(incident, detection, missions, sourceLabel)

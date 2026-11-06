@@ -257,7 +257,7 @@ export function LiveFeedPanel({
               )}
             >
               <SceneIcon className="size-3" />
-              {SCENE_DAMAGE_LABEL[scene.label]} · {scene.severity.toLowerCase()} · {Math.round(scene.confidence * 100)}%
+              {SCENE_DAMAGE_LABEL[scene.label]} · {scene.severity.toLowerCase()}
             </span>
           ) : null}
 

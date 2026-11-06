@@ -1,20 +1,14 @@
-import { useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Radio, ServerCrash, Zap, ZapOff } from 'lucide-react'
 import { PageHeader } from '../components/layout'
 import { Reveal } from '../components/landing/Reveal'
 import { Panel, EmptyState, Button, LoadingState } from '../components/ui'
 import { LiveFeedPanel } from '../components/media'
-import { PossibleCasualtyCard } from '../components/detections'
-import { useCommandStaffData } from '../features/command-staff'
-import { useToast } from '../features/toast'
 import { useFeeds, useCloseFeed } from '../features/media/useFeeds'
 import { ROUTES } from '../routes/paths'
 
 export function CommandStaffLiveMonitoringPage() {
-  const { detections, verifyDetection } = useCommandStaffData()
-  const navigate = useNavigate()
-  const toast = useToast()
   const [detectEnabled, setDetectEnabled] = useState(true)
 
   // A drone that goes live opens its feed by itself (api/services/drone_ingest.py); poll
@@ -29,17 +23,8 @@ export function CommandStaffLiveMonitoringPage() {
   // feeds don't all hammer /detect at the single-feed rate.
   const intervalMs = feedsQuery.data?.suggestedDetectIntervalMs ?? 350
 
-  // Same card as Detection Review, surfaced here so a casualty spotted on the
-  // feed can be actioned without leaving the screen the operator is watching.
-  // One card, not a list: the tracker gives every sighting of a subject the
-  // same id, so this is one casualty awaiting a decision.
-  const pendingCasualty = useMemo(
-    () =>
-      [...detections]
-        .filter((d) => d.category === 'CASUALTY' && d.validationStatus === 'PENDING' && d.confidence >= 0.6)
-        .sort((a, b) => b.detectedAt.localeCompare(a.detectedAt))[0] ?? null,
-    [detections],
-  )
+  // A casualty awaiting a decision pops up over this page (and every other
+  // Command Staff page) - see CasualtyAlertPopup, mounted in the router.
 
   const loadError = feedsQuery.error instanceof Error ? feedsQuery.error.message : null
 
@@ -113,27 +98,6 @@ export function CommandStaffLiveMonitoringPage() {
           )}
         </Reveal>
 
-        {/* Incident details sit below all feeds: the feeds are what an operator
-            watches, and the casualty awaiting a decision is what they act on next. */}
-        {pendingCasualty ? (
-          <Reveal delayMs={100}>
-            <PossibleCasualtyCard
-              detection={pendingCasualty}
-              onVerify={async (id) => {
-                try {
-                  await verifyDetection(id, 'MEDIUM', '')
-                } catch (err) {
-                  toast.error(err instanceof Error ? err.message : 'The incident could not be saved.', 'Verification failed')
-                  return
-                }
-                // Verifying opens an incident; Detection Review is where its
-                // priority is set and the follow-up happens, so go there with
-                // the casualty already selected.
-                navigate(ROUTES.commandStaffDetections, { state: { selectDetectionId: id } })
-              }}
-            />
-          </Reveal>
-        ) : null}
 
       </div>
     </>

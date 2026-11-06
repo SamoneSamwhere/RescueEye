@@ -176,8 +176,52 @@ def test_ffmpeg_cmd_caps_frame_width():
     """4K frames cost ~3x more to process per detection pass for no accuracy gain."""
     cmd = registry._build_ffmpeg_cmd("clip.mp4", 8.0)
     vf = cmd[cmd.index("-vf") + 1]
-    assert "fps=8.0" in vf
     assert f"scale='min({registry.FEED_MAX_WIDTH},iw)':-1" in vf
+
+
+def test_ffmpeg_cmd_drops_frames_but_never_repeats_them():
+    """
+    The fps filter forced 25 fps clips to 30 by showing every 5th frame twice:
+    a visible hitch several times a second. select only drops, and -vsync 0
+    stops the muxer padding the rate back up with repeats.
+    """
+    cmd = registry._build_ffmpeg_cmd("clip.mp4", 30.0)
+    vf = cmd[cmd.index("-vf") + 1]
+    assert "fps=" not in vf
+    assert vf.startswith("select=")
+    assert cmd[cmd.index("-vsync") + 1] == "0"
+    assert "-re" not in cmd            # the producer paces files itself
+
+
+@pytest.mark.parametrize("source, cap, expected", [
+    (25.0, 30.0, 25.0),
+    (24.0, 30.0, 24.0),
+    (29.97, 30.0, 29.97),
+    (59.94, 30.0, 29.97),
+    (60.0, 30.0, 30.0),
+    (50.0, 30.0, 25.0),
+    (10.0, 30.0, 10.0),
+    (None, 30.0, 30.0),
+])
+def test_output_fps_matches_what_the_select_filter_keeps(source, cap, expected):
+    assert registry.output_fps(source, cap) == pytest.approx(expected)
+
+
+def test_frame_pacer_spaces_frames_evenly_and_does_not_burst_after_a_stall(monkeypatch):
+    clock = {"t": 100.0}
+    slept = []
+    monkeypatch.setattr(registry.time, "perf_counter", lambda: clock["t"])
+    monkeypatch.setattr(registry.time, "sleep", lambda s: (slept.append(s), clock.__setitem__("t", clock["t"] + s)))
+    pacer = registry._FramePacer(25.0)
+    pacer.wait()                      # first frame goes at once
+    clock["t"] += 0.010               # the next frame was ready 10 ms later
+    pacer.wait()
+    assert slept == [pytest.approx(0.030)]
+    clock["t"] += 1.0                 # a 1 s stall
+    slept.clear()
+    pacer.wait()
+    pacer.wait()                      # resumes at the normal spacing, not a burst
+    assert slept == [pytest.approx(0.040)]
 
 
 def test_ffmpeg_cmd_keeps_network_source_flags_with_the_scale_filter():
