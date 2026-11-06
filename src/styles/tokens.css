@@ -205,6 +205,42 @@
   --animate-step-in: step-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
   --animate-auth-slide-left: auth-slide-left 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
   --animate-auth-slide-right: auth-slide-right 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+
+  /* Casualty alert pop-up: slides in, then fades away on its own once its
+     countdown bar runs out (CasualtyAlertPopup). */
+  --animate-alert-in: alert-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-alert-out: alert-out 1.2s ease-in both;
+}
+
+@keyframes alert-in {
+  from {
+    opacity: 0;
+    transform: translateY(24px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes alert-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+@keyframes alert-countdown {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
 }
 
 @keyframes float {
