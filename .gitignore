@@ -48,6 +48,8 @@ __pycache__/
 # Uploaded / demo drone footage
 api/data/uploads/
 api/data/media/
+# Clips moved out of the media library (duplicates, test clips) - kept locally, never committed
+api/data/media_archive/
 
 # Training datasets and runs — rebuilt by api/scripts/prepare_aerial_datasets.py
 # and train_models.py; gigabytes of images, not source.
