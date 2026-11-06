@@ -1,6 +1,6 @@
 export interface ColumnSeries {
   label: string
-  /** Any CSS color — pass a theme token, e.g. `var(--color-info)`, so it follows light and dark mode. */
+  /** Any CSS color — pass a theme token, e.g. `var(--color-info)`, so it matches the app palette. */
   color: string
 }
 

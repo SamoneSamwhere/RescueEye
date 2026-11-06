@@ -1,5 +1,7 @@
+import { MapPinHouse } from 'lucide-react'
 import { Field, Input } from '../../ui'
 import { PhilippineAddressFields } from '../../address'
+import { IconInput } from './IconInput'
 import type { AgencyInfoValues } from './types'
 
 interface AddressStepProps {
@@ -15,8 +17,9 @@ interface AddressStepProps {
  */
 export function AddressStep({ values, onChange }: AddressStepProps) {
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-y-5">
       <PhilippineAddressFields
+        className="gap-y-5"
         value={{
           regionCode: values.addressRegionCode,
           regionName: values.addressRegionName,
@@ -41,10 +44,11 @@ export function AddressStep({ values, onChange }: AddressStepProps) {
         }
       />
 
-      <div className="grid grid-cols-1 gap-3 @sm:grid-cols-[minmax(0,1fr)_10rem]">
-        <Field label="House / Building No. and Street" htmlFor="address-street" hint="Optional.">
-          <Input
+      <div className="grid grid-cols-1 gap-x-3 gap-y-5 @sm:grid-cols-[minmax(0,1fr)_8rem]">
+        <Field label="House / Bldg. No. and Street (optional)" htmlFor="address-street">
+          <IconInput
             id="address-street"
+            icon={MapPinHouse}
             autoComplete="address-line1"
             value={values.addressStreet}
             onChange={(event) => onChange({ addressStreet: event.target.value })}

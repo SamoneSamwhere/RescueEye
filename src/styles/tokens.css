@@ -362,14 +362,10 @@
 }
 
 /* ---------------------------------------------------------------------- */
-/* Light / dark theme — scoped to the shared [data-theme] root boundary.     */
-/* The root router layout owns this attribute so public pages and all role   */
-/* dashboards receive the same persisted theme.                              */
-/*                                                                          */
-/* surface-inverse / foreground-inverse / accent are intentionally NOT     */
-/* redefined here — the header, hero, and CTA bands are a fixed dark       */
-/* "signature" look in both themes; only the content bands and footer,     */
-/* which use the plain surface/foreground tokens, actually re-theme.       */
+/* Dark theme — the app is dark-only. RootLayout sets data-theme="dark" on */
+/* the shared root boundary; the :root values above are the base palette  */
+/* these overrides sit on. surface-inverse / foreground-inverse / accent    */
+/* are not redefined — the header, sidebar and hero bands use them as-is.   */
 /* ---------------------------------------------------------------------- */
 [data-theme='dark'] {
   --color-background: #0b1220;
@@ -389,12 +385,12 @@
   --shadow-modal: 0 10px 15px -3px rgb(0 0 0 / 0.5), 0 4px 6px -4px rgb(0 0 0 / 0.4);
 }
 
-/* Smooth theme transitions, scoped the same way. Colors only — never
+/* Smooth color transitions, scoped the same way. Colors only — never
    transform/opacity, which would fight the entrance/hover animations that
    already rely on their own transition timing throughout these pages.
    Wrapped in :where() so this rule carries zero specificity — every
-   component's own transition-* utility (hover lifts, reveals, the
-   ThemeToggle icon crossfade, etc.) keeps winning over it regardless of
+   component's own transition-* utility (hover lifts, reveals,
+   etc.) keeps winning over it regardless of
    source order, and this only governs elements with no transition of
    their own. */
 @layer base {

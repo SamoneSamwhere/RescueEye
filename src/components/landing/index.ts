@@ -1,6 +1,5 @@
 export { LandingHeader } from './LandingHeader'
 export { AuthPageShell } from './AuthPageShell'
-export { ThemeToggle } from './ThemeToggle'
 export { Reveal } from './Reveal'
 export { AmbientBackground } from './AmbientBackground'
 export { HeroSection } from './HeroSection'

@@ -4,7 +4,6 @@ import { Bell } from 'lucide-react'
 import type { AppNotification } from '../../types/notification'
 import { NOTIFICATION_TYPE_ICON } from '../../lib/notificationIcons'
 import { cn } from '../../lib/cn'
-import { useTheme } from '../../features/theme'
 
 interface NotificationAreaProps {
   notifications?: AppNotification[]
@@ -13,8 +12,6 @@ interface NotificationAreaProps {
 }
 
 export function NotificationArea({ notifications = [], historyHref }: NotificationAreaProps) {
-  const { theme } = useTheme()
-  const isDark = theme === 'dark'
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const unreadCount = notifications.filter((notification) => !notification.read).length
@@ -45,12 +42,7 @@ export function NotificationArea({ notifications = [], historyHref }: Notificati
         aria-label="Notifications"
         aria-haspopup="menu"
         aria-expanded={open}
-        className={cn(
-          'relative rounded-sm p-1.5',
-          isDark
-            ? 'text-foreground-inverse/70 hover:bg-white/10 hover:text-foreground-inverse'
-            : 'text-foreground-secondary hover:bg-surface-secondary hover:text-foreground',
-        )}
+        className="relative rounded-sm p-1.5 text-foreground-inverse/70 hover:bg-white/10 hover:text-foreground-inverse"
       >
         <Bell className="size-5" />
         {unreadCount > 0 ? (

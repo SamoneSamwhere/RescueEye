@@ -1,7 +1,6 @@
 import { Link, useLocation } from 'react-router-dom'
 import { cn } from '../../lib/cn'
 import type { NavItem } from '../../types/nav'
-import { useTheme } from '../../features/theme'
 
 interface MobileBottomNavProps {
   items: NavItem[]
@@ -9,18 +8,13 @@ interface MobileBottomNavProps {
 
 export function MobileBottomNav({ items }: MobileBottomNavProps) {
   const location = useLocation()
-  const { theme } = useTheme()
-  const isDark = theme === 'dark'
 
   // Floats over the content, fixed to the screen, so it stays put however long
   // the page is; MobileShell pads the content so nothing ends up behind it.
   return (
     <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-40 mx-auto w-full max-w-md px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
       <div
-        className={cn(
-          'pointer-events-auto flex items-stretch gap-1 rounded-2xl border px-2 py-2 shadow-modal backdrop-blur',
-          isDark ? 'border-white/10 bg-surface-inverse/90' : 'border-border bg-surface/90',
-        )}
+        className="pointer-events-auto flex items-stretch gap-1 rounded-2xl border border-white/10 bg-surface-inverse/90 px-2 py-2 shadow-modal backdrop-blur"
       >
         {items.map((item, index) => {
           const Icon = item.icon
@@ -41,9 +35,7 @@ export function MobileBottomNav({ items }: MobileBottomNavProps) {
                 'group flex flex-1 flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors',
                 isActive
                   ? 'text-accent'
-                  : isDark
-                    ? 'text-foreground-inverse/60 hover:text-foreground-inverse'
-                    : 'text-foreground-muted hover:text-foreground-secondary',
+                  : 'text-foreground-inverse/60 hover:text-foreground-inverse',
               )}
             >
               {Icon ? (

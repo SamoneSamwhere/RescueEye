@@ -12,9 +12,9 @@ export function RegistrationStepper({ steps, currentStep }: RegistrationStepperP
 
   return (
     <div className="relative mb-6">
-      <div className="absolute left-0 right-0 top-3.5 h-px bg-border" aria-hidden="true" />
+      <div className="absolute left-0 right-0 top-4 h-px bg-border" aria-hidden="true" />
       <div
-        className="absolute left-0 top-3.5 h-px bg-accent transition-all duration-500 ease-out"
+        className="absolute left-0 top-4 h-px bg-accent transition-all duration-500 ease-out"
         style={{ width: `${fillPercent}%` }}
         aria-hidden="true"
       />
@@ -24,10 +24,10 @@ export function RegistrationStepper({ steps, currentStep }: RegistrationStepperP
           const status = index < currentStep ? 'complete' : index === currentStep ? 'current' : 'pending'
 
           return (
-            <li key={label} className="flex flex-col items-center gap-1.5">
+            <li key={label} className="flex flex-col items-center gap-2">
               <span
                 className={cn(
-                  'flex size-7 items-center justify-center rounded-full border text-xs font-semibold transition-all duration-300',
+                  'flex size-8 items-center justify-center rounded-full border text-sm font-semibold transition-all duration-300',
                   status === 'pending' && 'border-border bg-surface text-foreground-muted',
                   status === 'current' && 'scale-110 border-accent bg-accent-subtle text-accent',
                   status === 'complete' && 'border-accent bg-accent text-foreground-inverse',
@@ -37,7 +37,7 @@ export function RegistrationStepper({ steps, currentStep }: RegistrationStepperP
               </span>
               <span
                 className={cn(
-                  'text-[11px] font-medium uppercase tracking-wide transition-colors duration-300',
+                  'text-xs font-medium uppercase tracking-wide transition-colors duration-300',
                   status === 'pending' ? 'text-foreground-muted' : 'text-accent',
                 )}
               >

@@ -1,17 +1,12 @@
 import { User as UserIcon } from 'lucide-react'
 import { USER_ROLE_LABEL } from '../../lib/labels'
 import type { AppUserSummary } from '../../types/user'
-import { cn } from '../../lib/cn'
-import { useTheme } from '../../features/theme'
 
 /**
- * Who is signed in, shown in the top bar. Display only — Settings, the theme
- * switch and Log out live in the sidebar.
+ * Who is signed in, shown in the top bar. Display only — Settings and Log out live
+ * in the sidebar.
  */
 export function UserBadge({ user }: { user: AppUserSummary }) {
-  const { theme } = useTheme()
-  const isDark = theme === 'dark'
-
   const initials = user.name
     .split(' ')
     .map((part) => part[0])
@@ -25,10 +20,10 @@ export function UserBadge({ user }: { user: AppUserSummary }) {
         {initials || <UserIcon className="size-4" />}
       </span>
       <span className="hidden flex-col items-start sm:flex">
-        <span className={cn('text-sm font-medium leading-tight', isDark ? 'text-foreground-inverse' : 'text-foreground')}>
+        <span className="text-sm font-medium leading-tight text-foreground-inverse">
           {user.name}
         </span>
-        <span className={cn('text-xs leading-tight', isDark ? 'text-foreground-inverse/60' : 'text-foreground-muted')}>
+        <span className="text-xs leading-tight text-foreground-inverse/60">
           {USER_ROLE_LABEL[user.role]}
           {user.agencyName ? ` · ${user.agencyName}` : ''}
         </span>

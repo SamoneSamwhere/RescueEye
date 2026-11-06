@@ -1,5 +1,7 @@
+import { Lock, Mail, ShieldCheck, Smartphone } from 'lucide-react'
 import { Field, Input } from '../../ui'
 import { formatPhPhone } from '../../../lib/phone'
+import { IconInput } from './IconInput'
 import { OTHER_POSITION, SAR_POSITIONS } from './types'
 import type { AdminInfoValues } from './types'
 
@@ -14,11 +16,11 @@ interface AdminInfoStepProps {
 export function AdminInfoStep({ values, onChange }: AdminInfoStepProps) {
   return (
     <div className="flex flex-col gap-3">
-      <div className="rounded-md border border-accent-border bg-accent-subtle px-3 py-2.5">
-        <p className="text-xs font-medium text-accent">Organization administrator account</p>
-        <p className="mt-0.5 text-xs leading-relaxed text-foreground-secondary">
-          This is the account that will manage your organization in RescueEye — approving detections, assigning
-          missions, and adding your team once your registration is approved.
+      <div className="flex items-center gap-2.5 rounded-md border border-accent-border bg-accent-subtle px-3 py-2">
+        <ShieldCheck className="size-4 shrink-0 text-accent" aria-hidden="true" />
+        <p className="text-xs leading-relaxed text-foreground-secondary">
+          <span className="font-medium text-accent">Organization administrator.</span> This account manages your
+          team, detections, and missions once approved.
         </p>
       </div>
 
@@ -54,8 +56,12 @@ export function AdminInfoStep({ values, onChange }: AdminInfoStepProps) {
         </Field>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 @md:grid-cols-3">
-        <Field label="Position / Designation" htmlFor="admin-position" className="@md:col-span-3">
+      <div className="grid grid-cols-1 gap-3 @sm:grid-cols-2">
+        <Field
+          label="Position / Designation"
+          htmlFor="admin-position"
+          className={values.position === OTHER_POSITION ? undefined : '@sm:col-span-2'}
+        >
           <select
             id="admin-position"
             value={values.position}
@@ -79,7 +85,7 @@ export function AdminInfoStep({ values, onChange }: AdminInfoStepProps) {
         </Field>
 
         {values.position === OTHER_POSITION ? (
-          <Field label="Your Position" htmlFor="admin-position-other" className="@md:col-span-3">
+          <Field label="Your Position" htmlFor="admin-position-other">
             <Input
               id="admin-position-other"
               value={values.positionOther}
@@ -90,20 +96,23 @@ export function AdminInfoStep({ values, onChange }: AdminInfoStepProps) {
           </Field>
         ) : null}
 
-        <Field label="Email Address" htmlFor="admin-email" className="@md:col-span-2">
-          <Input
+        <Field label="Email Address" htmlFor="admin-email">
+          <IconInput
             id="admin-email"
+            icon={Mail}
             type="email"
             autoComplete="email"
             value={values.email}
             onChange={(event) => onChange({ email: event.target.value })}
+            placeholder="you@yourorganization.org"
             required
           />
         </Field>
 
-        <Field label="Mobile Number" htmlFor="admin-phone" hint="PH mobile number.">
-          <Input
+        <Field label="Mobile Number" htmlFor="admin-phone">
+          <IconInput
             id="admin-phone"
+            icon={Smartphone}
             type="tel"
             autoComplete="tel"
             value={values.phone}
@@ -113,28 +122,30 @@ export function AdminInfoStep({ values, onChange }: AdminInfoStepProps) {
             required
           />
         </Field>
-      </div>
 
-      <div className="grid grid-cols-1 gap-3 @sm:grid-cols-2">
-        <Field label="Password" htmlFor="admin-password" hint="At least 8 characters.">
-          <Input
+        <Field label="Password" htmlFor="admin-password">
+          <IconInput
             id="admin-password"
+            icon={Lock}
             type="password"
             autoComplete="new-password"
             value={values.password}
             onChange={(event) => onChange({ password: event.target.value })}
+            placeholder="At least 8 characters"
             minLength={8}
             required
           />
         </Field>
 
         <Field label="Confirm Password" htmlFor="admin-confirm-password">
-          <Input
+          <IconInput
             id="admin-confirm-password"
+            icon={Lock}
             type="password"
             autoComplete="new-password"
             value={values.confirmPassword}
             onChange={(event) => onChange({ confirmPassword: event.target.value })}
+            placeholder="Re-enter password"
             minLength={8}
             required
           />

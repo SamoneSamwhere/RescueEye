@@ -1,6 +1,20 @@
+import { Award, FilePen, FileStack, IdCard, Landmark, MapPinHouse, ScrollText } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
+import { cn } from '../../../lib/cn'
 import { DocumentUploadField } from './DocumentUploadField'
 import { DOCUMENT_CATALOGUE, documentsFor } from './types'
 import type { DocumentErrors, DocumentFiles, DocumentId, OrganizationCategory } from './types'
+
+/** An icon per document, so each tile is recognisable without reading its description. */
+const DOCUMENT_ICONS: Record<DocumentId, LucideIcon> = {
+  adminId: IdCard,
+  officeOrder: FilePen,
+  registration: ScrollText,
+  lguEndorsement: Landmark,
+  accreditation: Award,
+  proofOfAddress: MapPinHouse,
+  otherSupporting: FileStack,
+}
 
 interface DocumentsStepProps {
   category: OrganizationCategory
@@ -20,47 +34,103 @@ export function DocumentsStep({
   onTermsChange,
 }: DocumentsStepProps) {
   const docs = documentsFor(category)
-  const required = docs.filter((d) => d.requirement === 'required')
-  const oneOf = docs.filter((d) => d.requirement === 'oneOf')
-  const optional = docs.filter((d) => d.requirement === 'optional')
-
-  const renderField = (id: DocumentId, isRequired: boolean) => (
-    <DocumentUploadField
-      key={id}
-      id={`doc-${id}`}
-      label={DOCUMENT_CATALOGUE[id].label}
-      hint={DOCUMENT_CATALOGUE[id].hint}
-      required={isRequired}
-      file={files[id]}
-      error={errors[id]}
-      onChange={(file, error) => onDocumentChange(id, file, error)}
-    />
-  )
+  const required = docs.filter((doc) => doc.requirement === 'required')
+  const oneOf = docs.filter((doc) => doc.requirement === 'oneOf')
+  const optional = docs.filter((doc) => doc.requirement === 'optional')
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-1 gap-3 @sm:grid-cols-2">
-        {required.map((d) => renderField(d.id, true))}
-      </div>
+    <div className="flex flex-col gap-3">
+      <p className="text-right text-xs text-foreground-muted">PDF, PNG, or JPG · max 10 MB per file</p>
+
+      {required.length > 0 ? (
+        <section className="flex flex-col gap-2" aria-labelledby="required-documents-heading">
+          <h3 id="required-documents-heading" className="text-sm font-semibold text-foreground">
+            Required documents
+          </h3>
+          <div className="grid grid-cols-2 gap-2.5 @md:grid-cols-4">
+            {required.map(({ id }) => {
+              const doc = DOCUMENT_CATALOGUE[id]
+              return (
+                <DocumentUploadField
+                  key={id}
+                  id={`doc-${id}`}
+                  icon={DOCUMENT_ICONS[id]}
+                  label={doc.shortLabel}
+                  tooltip={`${doc.label} — ${doc.hint}`}
+                  required
+                  file={files[id]}
+                  error={errors[id]}
+                  onChange={(file, error) => onDocumentChange(id, file, error)}
+                />
+              )
+            })}
+          </div>
+        </section>
+      ) : null}
 
       {oneOf.length > 0 ? (
-        <div className="flex flex-col gap-2">
-          <p className="text-xs font-medium uppercase tracking-wide text-foreground-secondary">
-            Supporting documents <span className="text-danger">*</span>
-            <span className="ml-1 normal-case text-foreground-muted">— at least one</span>
-          </p>
-          <div className="grid grid-cols-1 gap-3 @sm:grid-cols-2">
-            {/* Shown as optional one by one: no single one of these is required. */}
-            {oneOf.map((d) => renderField(d.id, false))}
+        <section
+          className="flex flex-col gap-2 border-t border-border/70 pt-3"
+          aria-labelledby="one-of-documents-heading"
+        >
+          <div>
+            <h3 id="one-of-documents-heading" className="text-sm font-semibold text-foreground">
+              Supporting documents
+            </h3>
+            <p className="text-xs text-foreground-secondary">Upload at least one of these.</p>
           </div>
-        </div>
+          <div className="grid grid-cols-2 gap-2.5 @md:grid-cols-4">
+            {oneOf.map(({ id }) => {
+              const doc = DOCUMENT_CATALOGUE[id]
+              return (
+                <DocumentUploadField
+                  key={id}
+                  id={`doc-${id}`}
+                  icon={DOCUMENT_ICONS[id]}
+                  label={doc.shortLabel}
+                  tooltip={`${doc.label} — ${doc.hint}`}
+                  file={files[id]}
+                  error={errors[id]}
+                  onChange={(file, error) => onDocumentChange(id, file, error)}
+                />
+              )
+            })}
+          </div>
+        </section>
       ) : null}
 
       {optional.length > 0 ? (
-        <div className="grid grid-cols-1 gap-3 @sm:grid-cols-2">{optional.map((d) => renderField(d.id, false))}</div>
+        <section
+          className={cn(
+            'flex flex-col gap-2',
+            (required.length > 0 || oneOf.length > 0) && 'border-t border-border/70 pt-3',
+          )}
+          aria-labelledby="optional-documents-heading"
+        >
+          <h3 id="optional-documents-heading" className="text-sm font-semibold text-foreground">
+            Optional documents
+          </h3>
+          <div className="grid grid-cols-2 gap-2.5 @md:grid-cols-4">
+            {optional.map(({ id }) => {
+              const doc = DOCUMENT_CATALOGUE[id]
+              return (
+                <DocumentUploadField
+                  key={id}
+                  id={`doc-${id}`}
+                  icon={DOCUMENT_ICONS[id]}
+                  label={doc.shortLabel}
+                  tooltip={`${doc.label} — ${doc.hint}`}
+                  file={files[id]}
+                  error={errors[id]}
+                  onChange={(file, error) => onDocumentChange(id, file, error)}
+                />
+              )
+            })}
+          </div>
+        </section>
       ) : null}
 
-      <label htmlFor="terms" className="flex items-start gap-2 text-xs text-foreground-secondary">
+      <label htmlFor="terms" className="flex items-start gap-2 text-sm leading-relaxed text-foreground-secondary">
         <input
           id="terms"
           type="checkbox"
