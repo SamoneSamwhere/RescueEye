@@ -45,7 +45,7 @@ from services.detection_store import add_detections
 from services.egomotion import EgoMotionEstimator
 from services import drone_locations, feed_registry, georef
 from services.tracker import Sort
-from routers.classify import classify_frame
+from routers.classify import classify_scene
 from routers.logs import append_log
 
 logger = logging.getLogger("rescueeye.detect")
@@ -973,6 +973,8 @@ class StreamState:
     lock:      threading.Lock = field(default_factory=threading.Lock)
     scene:     dict | None = None
     scene_at:  float = float("-inf")
+    # Running average of the scene classifier's readings (classify_scene).
+    scene_avg: "np.ndarray | None" = None
     # The feed id this stream analyses, which says which drone it is.
     key:       str | None = None
 
@@ -1202,7 +1204,7 @@ def _analyse(jpeg: bytes, stream: StreamState, want_annotation: bool,
         hazards = _drop_fire_on_people(_run_hazards(frame), [d["bbox"] for d in annotated])
         if SCENE_CLASSIFY and time.monotonic() - stream.scene_at >= SCENE_INTERVAL_S:
             try:
-                stream.scene = classify_frame(frame)
+                stream.scene, stream.scene_avg = classify_scene(frame, stream.scene_avg)
                 stream.scene_at = time.monotonic()
             except Exception as exc:
                 logger.warning(f"[detect] scene classification failed: {exc}")

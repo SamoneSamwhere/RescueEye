@@ -51,9 +51,9 @@ def test_response_carries_the_analysed_frame_size(client, bright_frame_b64):
 
 def test_scene_is_reclassified_at_most_once_per_interval(client, bright_frame_b64, monkeypatch):
     calls = []
-    monkeypatch.setattr(detect, "classify_frame",
-                        lambda f: calls.append(1) or {"label": "no_damage", "confidence": 0.9,
-                                                      "severity": "CLEAR", "suggested_action": ""})
+    monkeypatch.setattr(detect, "classify_scene",
+                        lambda f, prev: (calls.append(1) or {"label": "no_damage", "confidence": 0.9,
+                                                             "severity": "CLEAR", "suggested_action": ""}, None))
     monkeypatch.setattr(detect, "SCENE_INTERVAL_S", 3600.0)
     for _ in range(3):
         body = client.post("/detect", json={"frame": bright_frame_b64, "stream": "feedA"}).json()
@@ -122,9 +122,41 @@ def test_blob_matches_the_letterbox_geometry(frame):
 
 
 def test_stored_casualty_carries_the_scene_it_was_seen_in(client, prone_victim, bright_frame_b64, monkeypatch):
-    monkeypatch.setattr(detect, "classify_frame",
-                        lambda f: {"label": "flood_damage", "confidence": 0.9, "severity": "CRITICAL",
-                                   "suggested_action": ""})
+    monkeypatch.setattr(detect, "classify_scene",
+                        lambda f, prev: ({"label": "flood_damage", "confidence": 0.9, "severity": "CRITICAL",
+                                          "suggested_action": ""}, None))
     client.post("/detect", json={"frame": bright_frame_b64, "stream": "feedA"})
     stored = client.get("/detections/recent?limit=5").json()["detections"]
     assert stored and stored[0]["scene"]["label"] == "flood_damage"
+
+
+def test_scene_finds_damage_at_the_edge_and_smooths_it(monkeypatch):
+    """A flood only at the edges of the frame still labels the scene, and one odd reading doesn't flip it."""
+    import numpy as np
+    from routers import classify
+    names = ["fire_damage", "flood_damage", "no_damage", "structural_damage"]
+    monkeypatch.setattr(classify, "get_damage_ort_session", lambda: object())
+    monkeypatch.setattr(classify, "get_damage_ort_names", lambda: names)
+    monkeypatch.setattr(classify, "damage_state", lambda: type("S", (), {"is_custom": True, "version": "t"})())
+    # whole frame, left, centre, right: only the right square shows the flood
+    readings = iter([[0, .05, .95, 0], [0, .05, .95, 0], [0, .02, .98, 0], [0, .9, .1, 0]] * 3)
+    monkeypatch.setattr(classify, "_run_damage_ort", lambda s, c: np.array(next(readings), float))
+    frame = np.zeros((90, 160, 3), np.uint8)
+    result, avg = classify.classify_scene(frame, None)
+    assert result["label"] == "flood_damage"
+    # A clear reading next lowers the average but does not erase it at once.
+    readings = iter([[0, 0, 1, 0]] * 4)
+    result, avg = classify.classify_scene(frame, avg)
+    assert avg[1] > 0.4
+
+
+def test_scene_stays_clear_when_every_part_is_clear(monkeypatch):
+    import numpy as np
+    from routers import classify
+    names = ["fire_damage", "flood_damage", "no_damage", "structural_damage"]
+    monkeypatch.setattr(classify, "get_damage_ort_session", lambda: object())
+    monkeypatch.setattr(classify, "get_damage_ort_names", lambda: names)
+    monkeypatch.setattr(classify, "damage_state", lambda: type("S", (), {"is_custom": True, "version": "t"})())
+    monkeypatch.setattr(classify, "_run_damage_ort", lambda s, c: np.array([.02, .05, .9, .03]))
+    result, _ = classify.classify_scene(np.zeros((90, 160, 3), np.uint8), None)
+    assert result["label"] == "no_damage"

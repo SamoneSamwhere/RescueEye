@@ -92,6 +92,65 @@ def _run_damage_ort(session, frame) -> "np.ndarray":
     return np.asarray(out).reshape(-1)
 
 
+SCENE_SMOOTHING = 0.4      # weight of the newest reading in the running average
+SCENE_MIN_CONF  = 0.5      # below this the scene is reported as no damage
+
+
+def _scene_crops(frame: np.ndarray) -> list[np.ndarray]:
+    """The whole frame plus left, centre and right squares of it."""
+    h, w = frame.shape[:2]
+    s = min(h, w)
+    return [frame] + [frame[:, x:x + s] for x in np.linspace(0, w - s, 3).astype(int)]
+
+
+def classify_scene(frame: np.ndarray, previous: "np.ndarray | None") -> tuple[dict, "np.ndarray | None"]:
+    """
+    The live scene label for a feed: classify_frame, adapted to drone footage.
+
+    The classifier saw damage filling the frame in training (AIDER: high,
+    wide aerial shots). A low drone shot of people on a roof has the flood only
+    at the edges, and the centre-cropped whole frame read it as no damage
+    83-98% of the time. Each damage class therefore takes its strongest score
+    over the whole frame and its three squares, while "no damage" must hold in
+    all of them. Readings are averaged over a few seconds so the badge follows
+    the scene rather than flickering with each frame.
+
+    Measured on the library: the flood-roof clip goes from no badge to a damage
+    badge throughout; the undamaged clips (field, rescue-patrol, walkers) stay
+    clear, and the fire/flood/collapse clips keep their labels.
+
+    Returns the result and the running average to pass back next time.
+    """
+    session = get_damage_ort_session()
+    if session is None or not damage_state().is_custom:
+        return classify_frame(frame), None
+    t0 = time.perf_counter()
+    probs = np.array([_run_damage_ort(session, c) for c in _scene_crops(frame)])
+    names = get_damage_ort_names()
+    no = names.index("no_damage") if "no_damage" in names else None
+    reading = probs.max(axis=0)
+    if no is not None:
+        reading[no] = probs[:, no].min()
+    reading = reading / reading.sum()
+    avg = reading if previous is None or previous.shape != reading.shape else \
+        (1 - SCENE_SMOOTHING) * previous + SCENE_SMOOTHING * reading
+
+    k = int(np.argmax(avg))
+    label, conf = names[k], float(avg[k])
+    if no is not None and label != "no_damage" and conf < SCENE_MIN_CONF:
+        label, conf = "no_damage", float(avg[no])
+    tier, action = _get_severity(label, conf)
+    return {
+        "label":             label,
+        "confidence":        round(conf, 3),
+        "severity":          tier,
+        "suggested_action":  action,
+        "timestamp":         datetime.now(timezone.utc).isoformat(),
+        "model_version":     damage_state().version,
+        "inference_time_ms": round((time.perf_counter() - t0) * 1000, 1),
+    }, avg
+
+
 @router.post("")
 async def classify_damage(payload: dict = Body(...)):
     b64 = payload.get("frame", "")
