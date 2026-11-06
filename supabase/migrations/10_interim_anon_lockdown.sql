@@ -1,5 +1,5 @@
 -- Interim lockdown for the anon key, until 07_security_rls.sql can run.
---
+--wqa
 -- 07 needs SUPABASE_JWT_SECRET in api/.env so the browser gets a signed
 -- database token; without it the web app talks to Supabase with the public
 -- anon key, and 07 would lock it out. Meanwhile RLS is off and anon had full

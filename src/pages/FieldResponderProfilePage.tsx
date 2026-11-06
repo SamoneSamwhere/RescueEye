@@ -1,11 +1,10 @@
-import { Mail, Phone, Building2, Clock, LogOut, Settings, ChevronRight, Moon, CalendarDays, ShieldCheck } from 'lucide-react'
+import { Mail, Phone, Building2, Clock, LogOut, Settings, ChevronRight, CalendarDays, ShieldCheck } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { MobileShell } from '../components/layout'
 import { Card, Badge } from '../components/ui'
 import { Reveal } from '../components/landing/Reveal'
 import { useAuth } from '../features/auth'
-import { useTheme } from '../features/theme'
 import { FIELD_RESPONDER_NAV_ITEMS, useFieldResponderData } from '../features/field-responder'
 import { useCurrentProfileUser } from '../hooks/useCurrentProfileUser'
 import { formatDateTime } from '../lib/formatDateTime'
@@ -19,7 +18,7 @@ const memberSinceFormatter = new Intl.DateTimeFormat('en-US', { month: 'short', 
 function InfoRow({ icon: Icon, label, value }: { icon: typeof Mail; label: string; value: string }) {
   return (
     <li className="flex items-center gap-3 px-4 py-3">
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-accent-subtle text-accent [[data-theme=dark]_&]:text-white">
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-accent-subtle text-white">
         <Icon className="size-4" />
       </span>
       <div className="min-w-0">
@@ -36,22 +35,18 @@ function ActionRow({
   onClick,
   danger = false,
   trailing,
-  pressed,
 }: {
   icon: typeof Mail
   label: string
   onClick: () => void
   danger?: boolean
   trailing?: ReactNode
-  /** Set for on/off rows, so assistive tech reads the toggle state. */
-  pressed?: boolean
 }) {
   return (
     <li>
       <button
         type="button"
         onClick={onClick}
-        aria-pressed={pressed}
         className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-surface-secondary"
       >
         <span
@@ -72,7 +67,6 @@ function ActionRow({
 export function FieldResponderProfilePage() {
   const navigate = useNavigate()
   const { session, logout } = useAuth()
-  const { theme, toggleTheme } = useTheme()
   const { missions } = useFieldResponderData()
   const { notifications: allNotifications } = useNotificationStore()
   const { currentUser } = useCurrentProfileUser()
@@ -89,7 +83,6 @@ export function FieldResponderProfilePage() {
     .toUpperCase()
   const isActive = currentUser?.accountStatus === 'ACTIVE'
   const completed = missions.filter((m) => m.status === 'COMPLETED').length
-  const isDark = theme === 'dark'
 
   return (
     <MobileShell navItems={FIELD_RESPONDER_NAV_ITEMS} notifications={notifications}>
@@ -160,28 +153,6 @@ export function FieldResponderProfilePage() {
           <Card className="overflow-hidden">
             <ul className="divide-y divide-border">
               <ActionRow icon={Settings} label="Edit profile & settings" onClick={() => navigate(ROUTES.fieldResponderSettings)} />
-              <ActionRow
-                icon={Moon}
-                label="Dark mode"
-                onClick={toggleTheme}
-                pressed={isDark}
-                trailing={
-                  <span
-                    aria-hidden="true"
-                    className={cn(
-                      'relative h-6 w-11 shrink-0 rounded-full transition-colors',
-                      isDark ? 'bg-accent' : 'bg-border-strong',
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        'absolute top-0.5 size-5 rounded-full bg-white shadow transition-transform',
-                        isDark ? 'translate-x-5.5' : 'translate-x-0.5',
-                      )}
-                    />
-                  </span>
-                }
-              />
               <ActionRow icon={LogOut} label="Log out" onClick={logout} danger />
             </ul>
           </Card>

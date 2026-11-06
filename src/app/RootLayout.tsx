@@ -1,5 +1,4 @@
 import { Outlet } from 'react-router-dom'
-import { ThemeProvider, useTheme } from '../features/theme'
 import { ToastProvider } from '../features/toast'
 
 /**
@@ -7,24 +6,16 @@ import { ToastProvider } from '../features/toast'
  * theirs via each role's persistent layout (wrapping only the routed content, not the sidebar
  * shell) — see app/layouts/. Keeping this transition out of the shared root means navigating
  * between dashboard pages never remounts (and re-fades) the whole screen.
+ *
+ * The app is dark-only: `data-theme="dark"` here is the boundary the dark
+ * tokens and portaled modals attach to.
  */
-function ThemedRootLayout() {
-  const { theme } = useTheme()
-
+export function RootLayout() {
   return (
-    <div data-theme={theme} className="min-h-screen overflow-x-clip bg-background text-foreground">
+    <div data-theme="dark" className="min-h-screen overflow-x-clip bg-background text-foreground">
       <ToastProvider>
         <Outlet />
       </ToastProvider>
     </div>
-  )
-}
-
-/** Shared theme boundary for public pages and every authenticated role. */
-export function RootLayout() {
-  return (
-    <ThemeProvider>
-      <ThemedRootLayout />
-    </ThemeProvider>
   )
 }

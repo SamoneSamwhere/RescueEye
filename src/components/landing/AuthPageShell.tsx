@@ -2,7 +2,6 @@ import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import { HeroBackground } from './HeroBackground'
-import { ThemeToggle } from './ThemeToggle'
 import logo from '../../assets/logo.png'
 
 interface AuthPageShellProps {
@@ -23,7 +22,6 @@ function AuthPageShellContent({ children }: AuthPageShellProps) {
         </Link>
 
         <div className="flex items-center gap-3">
-          <ThemeToggle />
           <Link
             to="/"
             className="inline-flex items-center gap-1.5 text-sm font-medium text-foreground-inverse/70 transition-colors hover:text-foreground-inverse"

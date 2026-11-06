@@ -175,34 +175,50 @@ export const DOCUMENT_IDS: DocumentId[] = [
   'adminId', 'officeOrder', 'registration', 'lguEndorsement', 'accreditation', 'proofOfAddress', 'otherSupporting',
 ]
 
-export const DOCUMENT_CATALOGUE: Record<DocumentId, { label: string; hint: string }> = {
+/**
+ * label/hint: the full wording, used by the System Admin review page and in
+ * validation messages. shortLabel: the compact name shown on the registration
+ * document cards, which fit in a small square (the full label and hint stay
+ * available as the card's tooltip).
+ */
+export const DOCUMENT_CATALOGUE: Record<
+  DocumentId,
+  { label: string; hint: string; shortLabel: string }
+> = {
   adminId: {
     label: 'Valid Government-Issued ID',
     hint: 'Of the person registering — e.g. PhilSys ID, driver’s license, passport, or UMID.',
+    shortLabel: 'Government-issued ID',
   },
   officeOrder: {
     label: 'Office Order, Appointment, or Designation',
     hint: 'Shows you are authorized to register this office — e.g. an office order from the Mayor or head of agency.',
+    shortLabel: 'Office order / appointment',
   },
   registration: {
     label: 'SEC, CDA, or DOLE Certificate of Registration',
     hint: 'Proves the organization is legally registered.',
+    shortLabel: 'SEC / CDA / DOLE registration',
   },
   lguEndorsement: {
     label: 'Barangay Certification or LGU / DRRMO Endorsement',
     hint: 'A certification or endorsement from your barangay, LGU, or local DRRM office.',
+    shortLabel: 'Barangay / LGU endorsement',
   },
   accreditation: {
     label: 'Accreditation Certificate',
     hint: 'e.g. NDRRMC Accredited Community Disaster Volunteers (ACDV) or USAR accreditation.',
+    shortLabel: 'Accreditation certificate',
   },
   proofOfAddress: {
     label: 'Proof of Office Address',
     hint: "Mayor's or business permit, lease, or a utility bill for your office.",
+    shortLabel: 'Proof of office address',
   },
   otherSupporting: {
     label: 'Other Supporting Document',
     hint: 'Anything else that shows your work — training certificates, list of members, or records of past operations.',
+    shortLabel: 'Other supporting document',
   },
 }
 

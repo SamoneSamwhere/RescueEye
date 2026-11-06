@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom'
 import { Menu, X } from 'lucide-react'
 import { ROUTES } from '../../routes/paths'
 import { Button } from '../ui'
-import { ThemeToggle } from './ThemeToggle'
 import logo from '../../assets/logo.png'
 
 /**
@@ -42,8 +41,6 @@ export function LandingHeader() {
         </nav>
 
         <div className="flex items-center gap-2 sm:gap-3">
-          <ThemeToggle />
-
           <div className="hidden items-center gap-3 md:flex">
             <Link
               to={ROUTES.login}

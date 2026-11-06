@@ -352,12 +352,10 @@ export function AuthPage() {
     setSubmitted(true)
   }
 
-  // Sign in is always the same two fields, so it keeps one small fixed height. Registration's
-  // tallest step (Documents, with up to six upload slots) doesn't fit that same height no matter
-  // how tight the spacing gets, so signup gets a taller card instead — capped against the
-  // viewport so it never grows past the visible screen.
-  const cardWidthClass = 'max-w-2xl'
-  const cardHeightClass = mode === 'signup' ? 'h-[min(800px,90vh)]' : 'h-[520px]'
+  // One size for every registration step: the compact document tiles fit in the
+  // same card, so it no longer grows when the user reaches Documents.
+  const cardWidthClass = mode === 'signup' ? 'max-w-3xl' : 'max-w-2xl'
+  const cardHeightClass = mode === 'signup' ? 'h-[min(600px,90vh)]' : 'h-[480px]'
 
   return (
     <AuthPageShell>
@@ -374,7 +372,7 @@ export function AuthPage() {
                 minus the accent sliver on the right. */}
             <div
               className={cn(
-                'flex w-full flex-1 flex-col justify-center overflow-x-hidden overflow-y-auto px-6 py-6 sm:px-10 sm:py-7 lg:min-w-0 lg:pr-20 motion-safe:transition-[flex-grow,opacity,transform] motion-safe:duration-500 motion-safe:ease-out',
+                'flex w-full flex-1 flex-col justify-center overflow-x-hidden overflow-y-auto px-6 py-5 sm:px-10 sm:py-6 lg:min-w-0 lg:pr-20 motion-safe:transition-[flex-grow,opacity,transform] motion-safe:duration-500 motion-safe:ease-out',
                 mode === 'signup' && 'lg:flex-none lg:basis-0 lg:translate-x-3 lg:opacity-0 lg:px-0',
               )}
               inert={mode === 'signup' ? true : undefined}
@@ -383,14 +381,14 @@ export function AuthPage() {
                 <h2 className="text-center text-2xl font-semibold text-foreground">Sign In</h2>
               </div>
 
-              <div className="mx-auto mt-5 w-full max-w-md rounded-md border border-accent-border bg-accent-subtle px-3 py-2.5">
+              <div className="mx-auto mt-4 w-full max-w-md rounded-md border border-accent-border bg-accent-subtle px-3 py-2">
                 <p className="text-xs font-medium text-accent">Secure responder access</p>
                 <p className="mt-0.5 text-xs leading-relaxed text-foreground-secondary">
                   Your agency administrator provides your account and role permissions.
                 </p>
               </div>
 
-              <form className="mx-auto mt-6 flex w-full max-w-md flex-col gap-4" onSubmit={handleLoginSubmit}>
+              <form className="mx-auto mt-5 flex w-full max-w-md flex-col gap-3" onSubmit={handleLoginSubmit}>
                 <Field
                   label="Email"
                   htmlFor="email"
@@ -444,8 +442,10 @@ export function AuthPage() {
                 when sign in is active. */}
             <div
               className={cn(
-                '@container hidden flex-1 overflow-x-hidden overflow-y-auto py-6 sm:py-7 lg:flex lg:min-w-0 lg:flex-col lg:justify-center motion-safe:transition-[flex-grow,opacity,transform] motion-safe:duration-500 motion-safe:ease-out',
-                mode === 'signup' ? 'translate-x-0 px-6 opacity-100 sm:px-10 lg:pl-20' : 'lg:flex-none lg:basis-0 lg:-translate-x-3 lg:px-0 lg:opacity-0',
+                '@container hidden flex-1 overflow-x-hidden overflow-y-auto py-5 sm:py-6 lg:flex lg:min-w-0 lg:flex-col motion-safe:transition-[flex-grow,opacity,transform] motion-safe:duration-500 motion-safe:ease-out',
+                mode === 'signup'
+                  ? 'translate-x-0 px-6 opacity-100 sm:px-10 lg:pl-10 lg:justify-center'
+                  : 'lg:flex-none lg:basis-0 lg:-translate-x-3 lg:px-0 lg:opacity-0',
               )}
               inert={mode === 'signin' ? true : undefined}
             >
@@ -463,12 +463,18 @@ export function AuthPage() {
                   </Button>
                 </div>
               ) : (
-                <div className="mx-auto w-full max-w-lg">
-                  <h2 className="mb-5 text-center text-2xl font-semibold text-foreground">{STEP_LABELS[currentStep]} Information</h2>
+                <div className="mx-auto flex w-full flex-col lg:min-h-[33rem]">
+                  <h2 className="mb-4 text-center text-2xl font-semibold text-foreground">{STEP_LABELS[currentStep]} Information</h2>
                   <RegistrationStepper steps={STEP_LABELS} currentStep={currentStep} />
 
-                  <form className="flex flex-col gap-4" onSubmit={handleSignupSubmit}>
-                    <div key={currentStep} className="motion-safe:animate-step-in">
+                  <form className="flex flex-1 flex-col gap-3" onSubmit={handleSignupSubmit}>
+                    <div
+                      key={currentStep}
+                      className={cn(
+                        'motion-safe:animate-step-in',
+                        currentStep < 2 && 'flex flex-1 flex-col justify-center',
+                      )}
+                    >
                       {currentStep === 0 ? (
                         <OrganizationDetailsStep
                           values={agency}
@@ -499,30 +505,41 @@ export function AuthPage() {
                       ) : null}
                     </div>
 
-                    {signupError ? (
-                      <p
-                        role="alert"
-                        className="rounded-md border border-danger-border bg-danger-bg px-2 py-2 text-sm text-danger-fg motion-safe:animate-shake"
-                      >
-                        {signupError}
-                      </p>
-                    ) : null}
-
-                    <div className="flex shrink-0 items-center justify-end gap-3 pt-1">
-                      {currentStep > 0 ? (
-                        <Button type="button" variant="outline" onClick={goToPreviousStep} disabled={isCreatingAgency}>
-                          Back
-                        </Button>
+                    <div className="mt-auto flex shrink-0 flex-col gap-3 pt-1">
+                      {signupError ? (
+                        <p
+                          role="alert"
+                          className="rounded-md border border-danger-border bg-danger-bg px-3 py-2 text-sm text-danger-fg motion-safe:animate-shake"
+                        >
+                          {signupError}
+                        </p>
                       ) : null}
-                      {currentStep < STEP_LABELS.length - 1 ? (
-                        <Button type="button" onClick={goToNextStep}>
-                          Continue
-                        </Button>
-                      ) : (
-                        <Button type="submit" disabled={isCreatingAgency}>
-                          {isCreatingAgency ? 'Submitting...' : 'Submit Registration'}
-                        </Button>
-                      )}
+
+                      <div className="grid grid-cols-[7rem_9rem] justify-end gap-3">
+                        {currentStep > 0 ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="w-28"
+                            onClick={goToPreviousStep}
+                            disabled={isCreatingAgency}
+                          >
+                            Back
+                          </Button>
+                        ) : <span aria-hidden="true" />}
+                        {/* Distinct keys: without them React reuses the Continue button as the
+                            Submit button, its type flips to "submit" mid-click on the Admin step,
+                            and that same click submits the form straight away. */}
+                        {currentStep < STEP_LABELS.length - 1 ? (
+                          <Button key="continue" type="button" className="w-36" onClick={goToNextStep}>
+                            Continue
+                          </Button>
+                        ) : (
+                          <Button key="submit" type="submit" className="w-36" disabled={isCreatingAgency}>
+                            {isCreatingAgency ? 'Submitting...' : 'Submit Registration'}
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   </form>
                 </div>
@@ -536,24 +553,15 @@ export function AuthPage() {
                 two content slots reserve lg:pr-20 / lg:pl-20 so it doesn't overlap them once at rest. */}
             <div
               className={cn(
-                'absolute inset-y-0 z-10 hidden w-20 flex-col items-center justify-center overflow-hidden bg-gradient-to-br from-[#1e3a8a] via-[#1e40af] to-[#172554] text-center motion-safe:transition-[left] motion-safe:duration-500 motion-safe:ease-in-out lg:flex',
+                'absolute inset-y-0 z-10 hidden w-20 flex-col items-center justify-center overflow-hidden bg-[#1e3a8a] text-center text-foreground-inverse motion-safe:transition-[left] motion-safe:duration-500 motion-safe:ease-in-out lg:flex',
                 mode === 'signup' ? 'left-0' : 'left-[calc(100%-5rem)]',
               )}
             >
-              <div
-                aria-hidden="true"
-                className="absolute inset-0 opacity-20 [background-image:linear-gradient(135deg,rgba(255,255,255,0.12)_1px,transparent_1px),linear-gradient(45deg,rgba(255,255,255,0.06)_1px,transparent_1px)] [background-size:28px_28px]"
-              />
-              <div
-                aria-hidden="true"
-                className="absolute inset-0 bg-[radial-gradient(circle_at_50%_35%,rgba(255,255,255,0.18),transparent_62%)]"
-              />
-
               <button
                 type="button"
                 onClick={() => switchMode(mode === 'signin' ? 'signup' : 'signin')}
                 aria-label={mode === 'signin' ? 'Register organization' : 'Sign in'}
-                className="pointer-events-auto relative flex h-full w-full flex-col items-center justify-center gap-3 text-foreground-inverse transition-colors hover:bg-white/10"
+                className="pointer-events-auto relative flex h-full w-full flex-col items-center justify-center gap-3 transition-colors hover:bg-white/10"
               >
                 <span
                   key={mode}
