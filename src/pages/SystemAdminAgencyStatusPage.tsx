@@ -14,7 +14,7 @@ export function SystemAdminAgencyStatusPage() {
   return (
     <>
       <PageHeader
-        title="Agency Account Status Management"
+        title="Manage Agency"
         description="Activate or deactivate approved agencies. Deactivating never deletes the agency record."
       />
 

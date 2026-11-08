@@ -16,8 +16,8 @@ export function RoleStep({ selectedRole, onSelect }: RoleStepProps) {
         <div>
           <p className="text-xs font-medium text-accent">Choose a role</p>
           <p className="mt-0.5 text-xs leading-relaxed text-foreground-secondary">
-            The role determines what this person can see and do in RescueEye. You can change it later from Account
-            Status Management.
+            The role determines what this person can see and do in RescueEye. Personnel are managed from Manage
+            Personnel.
           </p>
         </div>
       </div>

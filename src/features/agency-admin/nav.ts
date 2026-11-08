@@ -7,5 +7,5 @@ export const AGENCY_ADMIN_NAV_ITEMS: NavItem[] = [
   // Add Staff lives on the Manage Personnel page, next to the people it adds.
   { label: 'Manage Personnel', href: ROUTES.agencyAdminAccountStatus, icon: Users },
   { label: 'Response Teams', href: ROUTES.agencyAdminTeams, icon: UsersRound },
-  { label: 'Incident History', href: ROUTES.agencyAdminIncidentHistory, icon: History },
+  { label: 'Mission History', href: ROUTES.agencyAdminIncidentHistory, icon: History },
 ]

@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { useLocation } from 'react-router-dom'
 import { Search, UserPlus } from 'lucide-react'
 import { PageHeader } from '../components/layout'
 import { Reveal } from '../components/landing/Reveal'
 import { Button, Input, Panel } from '../components/ui'
-import { UserStatusTable } from '../components/agency-admin'
+import { AddStaffModal, UserStatusTable } from '../components/agency-admin'
 import { useAgencyAdminData } from '../features/agency-admin'
-import { ROUTES } from '../routes/paths'
 import type { UserRole } from '../types/user'
 
 type RoleFilter = 'ALL' | Extract<UserRole, 'COMMAND_STAFF' | 'FIELD_RESPONDER'>
+type SortOrder = 'RECENT' | 'NAME'
 
 const selectClasses =
   'h-9 rounded-md border border-border-strong bg-surface px-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus'
@@ -22,27 +22,39 @@ const selectClasses =
 export function AgencyAdminAccountStatusPage() {
   const { agencyUsers, setUserStatus } = useAgencyAdminData()
   const location = useLocation()
-  const [highlightUserId, setHighlightUserId] = useState<string | undefined>(
-    (location.state as { highlightUserId?: string } | null)?.highlightUserId,
-  )
+  const navState = location.state as { highlightUserId?: string; addStaff?: boolean } | null
+  const [highlightUserId, setHighlightUserId] = useState<string | undefined>(navState?.highlightUserId)
+  const [addStaffOpen, setAddStaffOpen] = useState(navState?.addStaff ?? false)
   const [query, setQuery] = useState('')
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('ALL')
+  const [sortOrder, setSortOrder] = useState<SortOrder>('RECENT')
 
   useEffect(() => {
     if (!highlightUserId) return
     const timeout = setTimeout(() => setHighlightUserId(undefined), 3000)
     return () => clearTimeout(timeout)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [highlightUserId])
+
+  function handleCreated(userId: string) {
+    // Newest first, so the person just added is the top row.
+    setSortOrder('RECENT')
+    setQuery('')
+    setRoleFilter('ALL')
+    setHighlightUserId(userId)
+  }
 
   const visibleUsers = useMemo(() => {
     const q = query.trim().toLowerCase()
-    return agencyUsers.filter(
-      (u) =>
-        (roleFilter === 'ALL' || u.role === roleFilter) &&
-        (!q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)),
-    )
-  }, [agencyUsers, query, roleFilter])
+    return agencyUsers
+      .filter(
+        (u) =>
+          (roleFilter === 'ALL' || u.role === roleFilter) &&
+          (!q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)),
+      )
+      .sort((a, b) =>
+        sortOrder === 'NAME' ? a.name.localeCompare(b.name) : b.createdAt.localeCompare(a.createdAt),
+      )
+  }, [agencyUsers, query, roleFilter, sortOrder])
 
   return (
     <>
@@ -56,12 +68,10 @@ export function AgencyAdminAccountStatusPage() {
           <Panel
             title={`Personnel (${visibleUsers.length})`}
             actions={
-              <Link to={ROUTES.agencyAdminUserCreation}>
-                <Button size="sm">
-                  <UserPlus className="size-3.5" />
-                  Add Staff
-                </Button>
-              </Link>
+              <Button size="sm" onClick={() => setAddStaffOpen(true)}>
+                <UserPlus className="size-3.5" />
+                Add
+              </Button>
             }
           >
             <div className="flex flex-col gap-3">
@@ -86,6 +96,15 @@ export function AgencyAdminAccountStatusPage() {
                   <option value="COMMAND_STAFF">Command Staff</option>
                   <option value="FIELD_RESPONDER">Field Responders</option>
                 </select>
+                <select
+                  aria-label="Sort personnel"
+                  value={sortOrder}
+                  onChange={(event) => setSortOrder(event.target.value as SortOrder)}
+                  className={selectClasses}
+                >
+                  <option value="RECENT">Newest first</option>
+                  <option value="NAME">Name (A–Z)</option>
+                </select>
               </div>
 
               <UserStatusTable users={visibleUsers} onSetStatus={setUserStatus} highlightUserId={highlightUserId} />
@@ -93,6 +112,8 @@ export function AgencyAdminAccountStatusPage() {
           </Panel>
         </Reveal>
       </div>
+
+      <AddStaffModal open={addStaffOpen} onClose={() => setAddStaffOpen(false)} onCreated={handleCreated} />
     </>
   )
 }

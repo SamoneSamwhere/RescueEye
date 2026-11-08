@@ -10,13 +10,13 @@ export function AgencyAdminIncidentHistoryPage() {
   return (
     <>
       <PageHeader
-        title="Incident History"
-        description="Incidents previously handled by this agency's Field Responders."
+        title="Mission History"
+        description="Missions this agency's Field Responders have been sent on, and the incidents behind them."
       />
 
       <div className="flex flex-col gap-4 px-4 py-4">
         <Reveal>
-          <Panel title={`Incidents (${incidentHistory.length})`}>
+          <Panel title={`Missions (${incidentHistory.length})`}>
             <IncidentHistoryTable incidents={incidentHistory} />
           </Panel>
         </Reveal>

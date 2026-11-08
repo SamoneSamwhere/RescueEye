@@ -15,8 +15,8 @@ export function IncidentHistoryTable({ incidents }: IncidentHistoryTableProps) {
     return (
       <EmptyState
         icon={History}
-        title="No incident history"
-        description="Incidents your agency's Field Responders have been dispatched to will appear here."
+        title="No mission history"
+        description="Missions your agency's Field Responders have been sent on will appear here."
       />
     )
   }

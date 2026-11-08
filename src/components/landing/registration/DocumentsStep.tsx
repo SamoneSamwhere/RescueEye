@@ -44,9 +44,12 @@ export function DocumentsStep({
 
       {required.length > 0 ? (
         <section className="flex flex-col gap-2" aria-labelledby="required-documents-heading">
-          <h3 id="required-documents-heading" className="text-sm font-semibold text-foreground">
-            Required documents
-          </h3>
+          <div>
+            <h3 id="required-documents-heading" className="text-sm font-semibold text-foreground">
+              Required documents <span className="text-danger" aria-hidden="true">*</span>
+            </h3>
+            <p className="text-xs text-danger-fg">Every document marked in red must be uploaded before you can submit.</p>
+          </div>
           <div className="grid grid-cols-2 gap-2.5 @md:grid-cols-4">
             {required.map(({ id }) => {
               const doc = DOCUMENT_CATALOGUE[id]

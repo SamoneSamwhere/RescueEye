@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
 import { Building2, FileText, RotateCcw, Search, SearchX } from 'lucide-react'
 import {
   Panel,
@@ -18,7 +17,6 @@ import {
 import { usePagination } from '../../hooks/usePagination'
 import { formatDateTime } from '../../lib/formatDateTime'
 import { AGENCY_REGISTRATION_STATUS_LABEL, AGENCY_REGISTRATION_STATUS_TONE } from '../../lib/labels'
-import { systemAdminAgencyValidationDetailPath } from '../../routes/paths'
 import { cn } from '../../lib/cn'
 import type { Agency } from '../../types/agency'
 
@@ -27,6 +25,8 @@ interface AgencyValidationListProps {
   resubmissionRequiredAgencies: Agency[]
   rejectedAgencies: Agency[]
   onResubmit: (agencyId: string) => void
+  /** Opens the registration in the side panel. */
+  onOpen: (agencyId: string) => void
 }
 
 type QueueTab = 'PENDING' | 'RESUBMISSION_REQUIRED' | 'REJECTED'
@@ -63,6 +63,7 @@ export function AgencyValidationList({
   resubmissionRequiredAgencies,
   rejectedAgencies,
   onResubmit,
+  onOpen,
 }: AgencyValidationListProps) {
   const [tab, setTab] = useState<QueueTab>('PENDING')
   const [query, setQuery] = useState('')
@@ -185,8 +186,9 @@ export function AgencyValidationList({
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center justify-end gap-2">
-                      <Link
-                        to={systemAdminAgencyValidationDetailPath(agency.id)}
+                      <button
+                        type="button"
+                        onClick={() => onOpen(agency.id)}
                         className={cn(
                           'inline-flex h-7 items-center gap-1.5 whitespace-nowrap rounded-md border px-2 text-xs font-medium',
                           tab === 'PENDING'
@@ -196,7 +198,7 @@ export function AgencyValidationList({
                       >
                         <Search className="size-3.5" />
                         {tab === 'REJECTED' ? 'View' : 'Review'}
-                      </Link>
+                      </button>
                       {tab === 'REJECTED' ? (
                         <Button size="sm" variant="secondary" className="whitespace-nowrap" onClick={() => onResubmit(agency.id)}>
                           <RotateCcw className="size-3.5" />

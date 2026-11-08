@@ -132,9 +132,17 @@ export function DocumentUploadField({
               ? 'border-danger/60 bg-danger/10 motion-safe:animate-shake'
               : dragging
                 ? 'border-accent bg-accent-subtle'
-                : 'border-border-strong bg-surface-secondary hover:border-accent-border hover:bg-accent-subtle',
+                : required
+                  ? 'border-danger/70 bg-danger/5 hover:border-danger hover:bg-danger/10'
+                  : 'border-border-strong bg-surface-secondary hover:border-accent-border hover:bg-accent-subtle',
           )}
         >
+          {/* Required and still empty: a red tag the applicant cannot miss. */}
+          {required ? (
+            <span className="absolute left-1.5 top-1.5 rounded-sm bg-danger px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-white">
+              Required
+            </span>
+          ) : null}
           <Upload
             className="absolute right-2 top-2 size-3.5 text-foreground-muted transition-colors group-hover:text-accent"
             aria-hidden="true"

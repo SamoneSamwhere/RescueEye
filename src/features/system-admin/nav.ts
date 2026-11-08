@@ -5,5 +5,5 @@ import { ROUTES } from '../../routes/paths'
 export const SYSTEM_ADMIN_NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard', href: ROUTES.systemAdmin, icon: LayoutDashboard },
   { label: 'Agency Validation', href: ROUTES.systemAdminAgencyValidation, icon: ShieldCheck },
-  { label: 'Agency Account Status', href: ROUTES.systemAdminAgencyStatus, icon: Building2 },
+  { label: 'Manage Agency', href: ROUTES.systemAdminAgencyStatus, icon: Building2 },
 ]

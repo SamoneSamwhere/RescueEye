@@ -20,7 +20,7 @@ export function UserStatusTable({ users, onSetStatus, highlightUserId }: UserSta
   const { pageItems, pagination } = usePagination(users)
 
   if (users.length === 0) {
-    return <EmptyState icon={Users} title="No staff yet" description="Use Add Staff to create your first account." />
+    return <EmptyState icon={Users} title="No staff yet" description="Use the Add button to create your first account." />
   }
 
   return (
