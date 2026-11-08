@@ -235,6 +235,21 @@ class Feed:
     # DJI Fly's RTMP stream does not carry the gimbal angle. Telemetry, when a
     # drone sends it, overrides this.
     camera_view: str = "down"
+    # A clip from the media library: which one, the drone it was attributed
+    # to, where it was filmed (video_location.VideoGeo) and its length, so a
+    # detection can be placed where the drone was at that moment of the clip.
+    media_id: str | None = None
+    media_drone_id: str | None = None
+    geo: object | None = None
+    duration_sec: float | None = None
+    play_fps: float | None = None       # pace a file is played at
+
+    def playback_sec(self) -> float:
+        """Roughly how far into the clip the current frame is (it loops)."""
+        if not self.play_fps:
+            return 0.0
+        t = self.seq / self.play_fps
+        return t % self.duration_sec if self.duration_sec else t
 
     def snapshot(self) -> bytes | None:
         with self.lock:
@@ -300,6 +315,7 @@ class Feed:
             "ingestPath": self.ingest_path,
             "droneId":   self.drone_id,
             "cameraView": self.camera_view,
+            "mediaId":   self.media_id,
         }
 
 
@@ -446,6 +462,7 @@ def _ffmpeg_producer(feed: Feed, fps: float):
     if not _is_network_source(feed.source) and not _is_listen_source(feed.source):
         out_fps = output_fps(_source_fps(feed.source), fps)
         pacer = _FramePacer(out_fps)
+        feed.play_fps = out_fps
         logger.info(f"[feed:{feed.id}] playing at {out_fps:.2f} fps")
     feed.producer = "ffmpeg"
     feed.active = True

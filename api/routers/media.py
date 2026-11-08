@@ -20,13 +20,15 @@ from __future__ import annotations
 
 import logging
 import mimetypes
+import os
 from pathlib import Path
 
 from fastapi import APIRouter, Body, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, Response, StreamingResponse
 
 from services import feed_registry as registry
-from services import media_store
+from services import media_store, video_location
+from services.responder_registry import haversine_m
 from services.feed_registry import FeedLimitReached
 from services.media_store import MediaInUse, MediaNotFound, UnsupportedMedia
 
@@ -96,16 +98,69 @@ def _ranged_file_response(path: Path, request: Request, content_type: str) -> Re
 
 # ── Upload ────────────────────────────────────────────────────────────────────
 
+# Footage must have been filmed this close to the incident it is filed under.
+# A drone surveying a site ranges a few hundred metres from it; past this the
+# clip is of somewhere else.
+MEDIA_MAX_DISTANCE_M = float(os.getenv("MEDIA_MAX_DISTANCE_M", "1000"))
+_MAX_CAPTIONS_BYTES = 20 * 1024 * 1024
+
+
+def _distance_to(geo: video_location.VideoGeo, lat: float, lng: float) -> float:
+    """Closest the footage came to a point: a drone track only has to pass by it."""
+    points = [(p[1], p[2]) for p in geo.track] or [(geo.lat, geo.lng)]
+    return min(haversine_m(a, b, lat, lng) for a, b in points)
+
+
 @router.post("/upload", status_code=201)
 async def upload_media(
     file: UploadFile = File(...),
+    incidentId: str = Form(...),
+    incidentLat: float = Form(...),
+    incidentLng: float = Form(...),
+    droneId: str = Form(...),
+    captions: UploadFile | None = File(None),
+    simulateLocation: bool = Form(False),
     agencyId: str | None = Form(None),
-    droneId: str | None = Form(None),
     uploadedBy: str | None = Form(None),
     uploadedByName: str | None = Form(None),
     note: str = Form(""),
 ):
-    """Stores a recorded clip in the media library and returns its record."""
+    """
+    Stores a recorded clip, filed under the incident it was filmed at.
+
+    Where it was filmed is read from the video (services/video_location.py),
+    or from DJI's .SRT flight captions uploaded as `captions`. Footage filmed
+    more than MEDIA_MAX_DISTANCE_M from the incident is refused, and so is
+    footage with no position at all - unless `simulateLocation` is set, which
+    places it at the incident and marks it as simulated, for demos.
+    """
+    if not droneId.strip():
+        raise HTTPException(422, "Choose the drone that recorded this video.")
+    captions_text = None
+    if captions is not None and captions.filename:
+        raw = await captions.read(_MAX_CAPTIONS_BYTES + 1)
+        if len(raw) > _MAX_CAPTIONS_BYTES:
+            raise HTTPException(422, "The caption file is too large to be a DJI .SRT log.")
+        captions_text = raw.decode("utf-8", errors="replace")
+
+    def locate(path: Path) -> dict:
+        geo = video_location.read_location(path, captions_text)
+        if geo is None:
+            if not simulateLocation:
+                raise UnsupportedMedia(
+                    "This video has no GPS location in it, so there is no way to tell it was filmed "
+                    "at the incident. For DJI footage, turn on Video Captions in DJI Fly and upload "
+                    "the .SRT file with it - or simulate the location for a demo.")
+            geo = video_location.simulated_at(incidentLat, incidentLng)
+        else:
+            distance = _distance_to(geo, incidentLat, incidentLng)
+            if distance > MEDIA_MAX_DISTANCE_M:
+                raise UnsupportedMedia(
+                    f"This video was filmed {distance / 1000:.1f} km from the incident "
+                    f"(at {geo.lat:.5f}, {geo.lng:.5f}). Only footage from within "
+                    f"{MEDIA_MAX_DISTANCE_M / 1000:g} km of the incident can be filed under it.")
+        return geo.to_dict()
+
     try:
         record = media_store.save_upload(
             file.file,
@@ -116,6 +171,8 @@ async def upload_media(
             uploaded_by=uploadedBy,
             uploaded_by_name=uploadedByName,
             note=note,
+            incident_id=incidentId,
+            locate=locate,
         )
     except UnsupportedMedia as exc:
         raise HTTPException(422, str(exc))
@@ -234,6 +291,11 @@ async def monitor_media(media_id: str):
         feed = registry.add_feed(source=str(path), label=record.original_name, kind="upload")
     except FeedLimitReached as exc:
         raise HTTPException(409, str(exc))
+    # Detections from this clip are placed where the video says it was filmed.
+    feed.media_id = media_id
+    feed.media_drone_id = record.drone_id
+    feed.geo = video_location.VideoGeo.from_dict(record.geo)
+    feed.duration_sec = record.duration_sec
     return {"feed": feed.to_dict(), "mediaId": media_id, "reused": False}
 
 

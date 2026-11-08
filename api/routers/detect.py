@@ -1038,9 +1038,19 @@ def _drone_location(stream_key: str | None) -> drone_locations.DroneLocation | N
     drone_id = None
     if stream_key:
         try:
-            drone_id = feed_registry.get_feed(stream_key).drone_id
+            feed = feed_registry.get_feed(stream_key)
         except feed_registry.FeedNotFound:
-            drone_id = None
+            feed = None
+        if feed is not None and feed.geo is not None:
+            # A library clip: where the video says the drone was at this
+            # moment of it (services/video_location.py).
+            lat, lng, alt = feed.geo.at(feed.playback_sec())
+            return drone_locations.DroneLocation(
+                drone_id=feed.media_drone_id or "", lat=lat, lng=lng,
+                accuracy_m=feed.geo.accuracy_m, source=feed.geo.source,
+                method=feed.geo.method, age_s=0.0, altitude_m=alt,
+            )
+        drone_id = feed.drone_id if feed is not None else None
     return drone_locations.locate(drone_id or "")
 
 
@@ -1292,6 +1302,14 @@ async def run_detection(jpeg: bytes, stream_key: str | None = None,
 
     return {
         "detections":        emitted,
+        # Everyone the gate judged not a casualty (walking, standing, moving),
+        # for the overlay to draw in green. Display only: never stored,
+        # reviewed or alerted on. Empty when they are already in `detections`.
+        "people": [] if REPORT_NON_CASUALTIES else [
+            {"class": "person", "bbox": d["bbox"], "confidence": d["confidence"],
+             "track_id": d.get("track_id")}
+            for d in r["annotated"] if d["class"] != "casualty"
+        ],
         "casualty_count":    len(casualties),
         # People seen in this frame, and how many of them the gate withheld as
         # not casualties. Reported so "nothing found" can be told apart from

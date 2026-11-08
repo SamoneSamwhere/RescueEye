@@ -18,6 +18,7 @@ import {
 import { usePagination } from '../../hooks/usePagination'
 import { formatDateTime } from '../../lib/formatDateTime'
 import { mediaThumbnailUrl, mediaFileUrl } from '../../features/media'
+import { VIDEO_GEO_METHOD_LABEL } from '../../types/media'
 import type { StoredMedia } from '../../types/media'
 import { cn } from '../../lib/cn'
 
@@ -123,6 +124,7 @@ export function StoredMediaTable({
             <TableRow>
               <TableHead>Clip</TableHead>
               <TableHead>Drone</TableHead>
+              <TableHead>Filmed at</TableHead>
               <TableHead>Mission</TableHead>
               <TableHead>Uploaded By</TableHead>
               <TableHead>Duration</TableHead>
@@ -174,6 +176,9 @@ export function StoredMediaTable({
                 <TableCell className="text-foreground-secondary">
                   {droneNameById(item.drone_id) ?? '—'}
                 </TableCell>
+                <TableCell>
+                  <FilmedAt media={item} />
+                </TableCell>
                 <TableCell className="text-foreground-secondary">
                   {missionLabelFor?.(item) ?? '—'}
                 </TableCell>
@@ -224,7 +229,7 @@ export function StoredMediaTable({
                 <TableRow>
                   {/* Spans the whole row so the player gets the table's full width
                       rather than being squeezed into the thumbnail column. */}
-                  <TableCell colSpan={9} className={cn('bg-surface-secondary')}>
+                  <TableCell colSpan={10} className={cn('bg-surface-secondary')}>
                     <video
                       src={mediaFileUrl(item.id)}
                       controls
@@ -243,5 +248,27 @@ export function StoredMediaTable({
         </>
       )}
     </Panel>
+  )
+}
+
+/** Where the clip was filmed, and how that is known. Links to the spot on a map. */
+function FilmedAt({ media }: { media: StoredMedia }) {
+  const geo = media.geo
+  if (!geo) return <span className="text-foreground-muted">Unknown</span>
+  return (
+    <span className="flex flex-col leading-tight">
+      <a
+        href={`https://www.openstreetmap.org/?mlat=${geo.lat}&mlon=${geo.lng}#map=18/${geo.lat}/${geo.lng}`}
+        target="_blank"
+        rel="noreferrer"
+        className="text-sm tabular-nums text-accent hover:underline"
+      >
+        {geo.lat.toFixed(5)}, {geo.lng.toFixed(5)}
+      </a>
+      <span className={cn('text-xs', geo.source === 'simulated' ? 'text-warning' : 'text-foreground-muted')}>
+        {VIDEO_GEO_METHOD_LABEL[geo.method]}
+        {geo.track.length > 1 ? ` · ${geo.track.length}-point track` : ''}
+      </span>
+    </span>
   )
 }

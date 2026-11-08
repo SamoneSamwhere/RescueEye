@@ -58,6 +58,10 @@ export interface StoredMedia {
   note: string
   frames: StoredFrame[]
   frame_count: number
+  /** The incident this footage was filed under. Null on clips stored before uploads required one. */
+  incident_id?: string | null
+  /** Where the footage was filmed (api/services/video_location.py). Null when unknown. */
+  geo?: VideoGeo | null
 }
 
 export interface MediaLibraryStats {
@@ -65,4 +69,26 @@ export interface MediaLibraryStats {
   frame_count: number
   bytes: number
   dir: string
+}
+
+/**
+ * Where a clip was filmed, read from the video itself: a DJI flight log
+ * (embedded, or the .SRT uploaded with it) or a phone's GPS tag - or, with no
+ * GPS in the file, the incident's location stood in as a simulation.
+ */
+export interface VideoGeo {
+  lat: number
+  lng: number
+  source: 'video_metadata' | 'simulated'
+  method: 'dji_srt' | 'srt_file' | 'iso6709' | 'simulated'
+  accuracy_m: number
+  /** [tSec, lat, lng, altitudeM], one per second, when the clip carries a drone track. */
+  track: Array<[number, number, number, number | null]>
+}
+
+export const VIDEO_GEO_METHOD_LABEL: Record<VideoGeo['method'], string> = {
+  dji_srt: "Drone's GPS (flight log in the video)",
+  srt_file: "Drone's GPS (DJI .SRT file)",
+  iso6709: "Camera's GPS tag",
+  simulated: 'Simulated at the incident',
 }

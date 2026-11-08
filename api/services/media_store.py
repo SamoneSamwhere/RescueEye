@@ -27,7 +27,7 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, BinaryIO
+from typing import Any, BinaryIO, Callable
 
 logger = logging.getLogger("rescueeye.media")
 
@@ -93,6 +93,10 @@ class MediaRecord:
     height: int | None = None
     note: str = ""
     frames: list[CapturedFrame] = field(default_factory=list)
+    # The incident this footage was filmed at, and where the footage itself
+    # says it was filmed (services/video_location.py VideoGeo, as a dict).
+    incident_id: str | None = None
+    geo: dict | None = None
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -190,8 +194,15 @@ def save_upload(fileobj: BinaryIO, original_name: str, *,
                 uploaded_by: str | None = None,
                 uploaded_by_name: str | None = None,
                 source_type: str = SOURCE_UPLOADED,
-                note: str = "") -> MediaRecord:
-    """Persist an uploaded clip and register it in the library."""
+                note: str = "",
+                incident_id: str | None = None,
+                locate: Callable[[Path], dict | None] | None = None) -> MediaRecord:
+    """
+    Persist an uploaded clip and register it in the library.
+
+    `locate` reads where the stored file was filmed and may refuse it by
+    raising UnsupportedMedia; the file is then removed and never indexed.
+    """
     ext = Path(original_name or "").suffix.lower()
     if ext not in ALLOWED_VIDEO_EXTS:
         raise UnsupportedMedia(
@@ -212,6 +223,14 @@ def save_upload(fileobj: BinaryIO, original_name: str, *,
         dest.unlink(missing_ok=True)
         raise UnsupportedMedia("Uploaded file is empty.")
 
+    geo = None
+    if locate is not None:
+        try:
+            geo = locate(dest)
+        except Exception:
+            dest.unlink(missing_ok=True)
+            raise
+
     duration, width, height = _probe(dest)
     now = datetime.now(timezone.utc).isoformat()
     record = MediaRecord(
@@ -231,6 +250,8 @@ def save_upload(fileobj: BinaryIO, original_name: str, *,
         width=width,
         height=height,
         note=note,
+        incident_id=incident_id,
+        geo=geo,
     )
 
     with _lock:

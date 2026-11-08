@@ -14,7 +14,10 @@ from fastapi.testclient import TestClient
 from auth_helpers import AUTH_HEADERS
 
 from routers import media as media_router
-from services import media_store
+from services import media_store, video_location
+
+# UC Banilad, and a point about 2.6 km away in Cebu IT Park... far enough to refuse.
+INCIDENT = {"incidentId": "inc-1", "incidentLat": "10.3385", "incidentLng": "123.9118", "droneId": "alpha"}
 
 
 @pytest.fixture()
@@ -24,6 +27,11 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(media_store, "FRAMES_DIR", media / "frames")
     monkeypatch.setattr(media_store, "INDEX_FILE", media / "index.json")
     monkeypatch.setattr(media_store, "_probe", lambda _p: (10.0, 1280, 720))
+    # Every test clip "was filmed" at the incident unless a test says otherwise.
+    monkeypatch.setattr(video_location, "read_location",
+                        lambda path, captions=None: video_location.VideoGeo(
+                            lat=10.3386, lng=123.9119, source="video_metadata",
+                            method="iso6709", accuracy_m=20.0))
     monkeypatch.setattr(media_store, "_extract_frame",
                         lambda v, t, dest: (dest.write_bytes(b"jpgbytes"), True)[1])
     app = FastAPI()
@@ -31,10 +39,61 @@ def client(tmp_path, monkeypatch):
     return TestClient(app, headers=AUTH_HEADERS)
 
 
-def _upload(client, name="clip.mp4", data=b"0123456789" * 100, **form):
+def _upload(client, name="clip.mp4", data=b"0123456789" * 100, files=None, **form):
     return client.post("/media/upload",
-                       files={"file": (name, io.BytesIO(data), "video/mp4")},
-                       data=form)
+                       files={"file": (name, io.BytesIO(data), "video/mp4"), **(files or {})},
+                       data={**INCIDENT, **form})
+
+
+def test_upload_records_where_it_was_filmed(client):
+    body = _upload(client).json()
+    assert body["incident_id"] == "inc-1" and body["drone_id"] == "alpha"
+    assert (body["geo"]["lat"], body["geo"]["source"]) == (10.3386, "video_metadata")
+
+
+def test_upload_far_from_the_incident_is_refused_and_not_kept(client, monkeypatch):
+    monkeypatch.setattr(video_location, "read_location",
+                        lambda path, captions=None: video_location.VideoGeo(
+                            lat=10.3290, lng=123.9050, source="video_metadata",
+                            method="dji_srt", accuracy_m=30.0, track=[[0, 10.3290, 123.9050, 40.0]]))
+    r = _upload(client)
+    assert r.status_code == 422 and "km from the incident" in r.json()["detail"]
+    assert client.get("/media").json()["count"] == 0
+    assert not list(media_store.MEDIA_DIR.glob("*.mp4"))
+
+
+def test_a_track_that_passes_the_incident_is_accepted(client, monkeypatch):
+    monkeypatch.setattr(video_location, "read_location",
+                        lambda path, captions=None: video_location.VideoGeo(
+                            lat=10.3290, lng=123.9050, source="video_metadata", method="dji_srt",
+                            accuracy_m=30.0, track=[[0, 10.3290, 123.9050, 40.0], [60, 10.3384, 123.9117, 40.0]]))
+    assert _upload(client).status_code == 201
+
+
+def test_upload_without_gps_needs_simulation(client, monkeypatch):
+    monkeypatch.setattr(video_location, "read_location", lambda path, captions=None: None)
+    r = _upload(client)
+    assert r.status_code == 422 and "no GPS" in r.json()["detail"]
+    body = _upload(client, simulateLocation="true").json()
+    assert body["geo"]["source"] == "simulated"
+    assert (body["geo"]["lat"], body["geo"]["lng"]) == (10.3385, 123.9118)
+
+
+def test_upload_needs_an_incident_and_a_drone(client):
+    r = client.post("/media/upload", files={"file": ("a.mp4", io.BytesIO(b"x" * 10), "video/mp4")},
+                    data={"droneId": "alpha"})
+    assert r.status_code == 422
+    assert _upload(client, droneId=" ").status_code == 422
+
+
+def test_captions_file_is_passed_to_the_location_reader(client, monkeypatch):
+    seen = {}
+    def fake(path, captions=None):
+        seen["captions"] = captions
+        return video_location.simulated_at(10.3385, 123.9118)
+    monkeypatch.setattr(video_location, "read_location", fake)
+    _upload(client, files={"captions": ("DJI_0001.SRT", io.BytesIO(b"1\n00:00:00,000 --> 00:00:01,000\nx"), "text/plain")})
+    assert "00:00:00,000" in seen["captions"]
 
 
 def test_upload_returns_201_and_record(client):

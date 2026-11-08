@@ -63,6 +63,8 @@ export interface SceneLabel extends SceneDamage {
 
 interface DetectResponse {
   detections: DetectionBox[]
+  /** People judged not casualties (walking, standing): drawn green, never stored. */
+  people?: DetectionBox[]
   /** Fire/smoke boxes, same pixel space as `detections`. Never tracked. */
   hazards?: DetectionBox[]
   scene?: SceneLabel | null
@@ -176,6 +178,7 @@ export const mediaLabel = (media: StoredMedia) => media.original_name
 
 export interface DetectionState {
   boxes: DetectionBox[]
+  people: DetectionBox[]
   hazards: DetectionBox[]
   scene: SceneLabel | null
   /** Natural size of the frame the boxes were measured against. */
@@ -189,6 +192,7 @@ export interface DetectionState {
 
 const EMPTY: DetectionState = {
   boxes: [],
+  people: [],
   hazards: [],
   scene: null,
   frameWidth: 0,
@@ -228,6 +232,7 @@ export function useFeedDetection(feedId: string | null, enabled: boolean, interv
         if (cancelled.current) return
         setState({
           boxes: result.detections ?? [],
+          people: result.people ?? [],
           hazards: result.hazards ?? [],
           scene: result.scene ?? null,
           frameWidth: result.frameWidth ?? 0,

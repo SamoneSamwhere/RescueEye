@@ -85,7 +85,7 @@ export interface Detection {
    * simulation; and how far off it may be. Only on detections ingested from
    * the API — mock detections have neither.
    */
-  locationSource?: 'drone_gps' | 'pilot' | 'simulated'
+  locationSource?: 'drone_gps' | 'pilot' | 'simulated' | 'video_metadata'
   locationAccuracyM?: number
 }
 

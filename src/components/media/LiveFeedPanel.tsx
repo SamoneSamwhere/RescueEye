@@ -22,10 +22,9 @@ const STREAM_RETRY_MS = 1200
 
 const BOX_COLORS: Record<string, string> = {
   casualty: '#ff3b3b',
-  // A person the casualty gate did not promote. Deliberately drawn, and
-  // deliberately not red: the operator should see that the system noticed
-  // someone and decided they were not a casualty.
-  person: '#94a3b8',
+  // A person the casualty gate did not promote: walking, standing, moving.
+  // Green, so the operator sees the system noticed them and judged them fine.
+  person: '#22c55e',
   fire_damage: '#ff7700',
   flood_damage: '#00d4ff',
   structural_damage: '#f97316',
@@ -143,7 +142,9 @@ export function LiveFeedPanel({
     }
   }
 
-  const { boxes, hazards, scene, frameWidth, frameHeight } = detection
+  const { boxes, people, hazards, scene, frameWidth, frameHeight } = detection
+  const casualtyCount = boxes.filter((b) => b.class === 'casualty').length
+  const personCount = people.length + boxes.length - casualtyCount
   const canScale = frameWidth > 0 && frameHeight > 0
   const SceneIcon = (scene && SCENE_ICON[scene.label]) ?? Flame
 
@@ -240,7 +241,7 @@ export function LiveFeedPanel({
               {detection.error
                 ? 'AI error'
                 : detection.inferenceMs != null
-                  ? `${boxes.length} detected${hazards.length ? ` · ${hazards.length} fire/smoke` : ''} · ${Math.round(detection.inferenceMs)}ms`
+                  ? `${casualtyCount} casualt${casualtyCount === 1 ? 'y' : 'ies'}${personCount ? ` · ${personCount} OK` : ''}${hazards.length ? ` · ${hazards.length} fire/smoke` : ''} · ${Math.round(detection.inferenceMs)}ms`
                   : 'Analysing…'}
             </span>
           ) : null}
@@ -261,9 +262,12 @@ export function LiveFeedPanel({
             </span>
           ) : null}
 
-          {/* Detection overlay. Hazards first so a casualty box always sits on
-              top of the smoke around it. */}
+          {/* Detection overlay. Hazards first, then people who are fine, so a
+              casualty box always sits on top. */}
           {canScale ? hazards.map((box, i) => renderBox(box, `hz-${i}`, box.class === 'smoke')) : null}
+          {canScale
+            ? people.map((box, i) => renderBox(box, box.track_id ?? `p-${box.bbox.x}-${box.bbox.y}-${i}`))
+            : null}
           {canScale
             ? boxes.map((box, i) => renderBox(box, box.track_id ?? `${box.bbox.x}-${box.bbox.y}-${i}`))
             : null}

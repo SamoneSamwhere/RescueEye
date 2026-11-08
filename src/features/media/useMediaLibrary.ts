@@ -40,8 +40,16 @@ export function useMediaStats() {
 
 export interface UploadMediaInput {
   file: File
+  /** The incident the footage was filmed at; the API refuses footage from elsewhere. */
+  incidentId: string
+  incidentLat: number
+  incidentLng: number
+  droneId: string
+  /** DJI's .SRT flight captions, for a video with no GPS of its own. */
+  captions?: File
+  /** No GPS anywhere: place the clip at the incident, marked simulated (demos). */
+  simulateLocation?: boolean
   agencyId?: string
-  droneId?: string
   uploadedBy?: string
   uploadedByName?: string
   note?: string
@@ -62,7 +70,12 @@ export function useUploadMedia() {
       const form = new FormData()
       form.append('file', input.file)
       if (input.agencyId) form.append('agencyId', input.agencyId)
-      if (input.droneId) form.append('droneId', input.droneId)
+      form.append('droneId', input.droneId)
+      form.append('incidentId', input.incidentId)
+      form.append('incidentLat', String(input.incidentLat))
+      form.append('incidentLng', String(input.incidentLng))
+      if (input.captions) form.append('captions', input.captions)
+      if (input.simulateLocation) form.append('simulateLocation', 'true')
       if (input.uploadedBy) form.append('uploadedBy', input.uploadedBy)
       if (input.uploadedByName) form.append('uploadedByName', input.uploadedByName)
       if (input.note) form.append('note', input.note)

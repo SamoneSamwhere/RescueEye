@@ -11,14 +11,17 @@ import {
   hasActiveFilters,
 } from '../components/media'
 import { UploadedFeedsSection } from '../components/media/UploadedFeedsSection'
-import type { MediaFilters } from '../components/media'
+import type { AddVideoUpload, IncidentOption, MediaFilters } from '../components/media'
 import { useAuth } from '../features/auth'
 import { useCommandStaffData } from '../features/command-staff'
 import { useToast } from '../features/toast'
 import { mockUsers } from '../data/mockUsers'
 import { useMediaLibrary, useUploadMedia } from '../features/media'
 import { useMonitorMedia } from '../features/media/useFeeds'
+import { VIDEO_GEO_METHOD_LABEL } from '../types/media'
 import type { StoredMedia } from '../types/media'
+import { incidentDetection } from '../types/detection'
+import { formatDateTime } from '../lib/formatDateTime'
 
 /**
  * Media Library — recorded footage: upload it, play it, or monitor it with AI
@@ -96,6 +99,28 @@ export function CommandStaffMediaLibraryPage() {
     [missionByStoredMediaId, missionLabel],
   )
 
+  /**
+   * Open incidents footage can be filed under. The location is the verified
+   * detection's: the API checks the video was filmed near it.
+   */
+  const incidentOptions = useMemo<IncidentOption[]>(
+    () =>
+      incidents
+        .filter((i) => i.status !== 'CLOSED')
+        .flatMap((i) => {
+          const detection = incidentDetection(detections, i.detectionId)
+          if (!detection) return []
+          return [
+            {
+              id: i.id,
+              label: `${i.priority} incident · verified ${formatDateTime(i.verifiedAt)}`,
+              location: detection.location,
+            },
+          ]
+        }),
+    [incidents, detections],
+  )
+
   const droneOptions = useMemo(() => drones.map((d) => ({ value: d.id, label: d.name })), [drones])
 
   const filteredMedia = useMemo(() => {
@@ -123,26 +148,37 @@ export function CommandStaffMediaLibraryPage() {
   )
 
   /**
-   * Stores the clip in the library and does nothing else.
+   * Stores the clip, then starts the AI on it straight away, so what it finds
+   * shows up in Detection Review placed where the video was filmed.
    *
    * Deliberately does NOT call captureMedia: that fabricates a PENDING
-   * detection per upload, and adding files in bulk here would bury the real
-   * AI output under invented rows. Storing footage is not evidence of
-   * anything — the detection is produced when someone actually monitors it.
+   * detection per upload. Detections come from the AI actually watching it.
    */
-  function handleAddVideo(file: File, droneId: string | undefined) {
+  function handleAddVideo({ file, droneId, incident, captions, simulateLocation }: AddVideoUpload) {
     upload.mutate(
       {
         file,
         agencyId,
         droneId,
+        incidentId: incident.id,
+        incidentLat: incident.location.lat,
+        incidentLng: incident.location.lng,
+        captions,
+        simulateLocation,
         uploadedBy: session?.id,
         uploadedByName: session?.name,
       },
       {
         onSuccess: (stored) => {
-          toast.success(`${stored.original_name} was uploaded and stored for later review.`, 'Video uploaded')
+          const where = stored.geo
+            ? `Filmed at ${stored.geo.lat.toFixed(5)}, ${stored.geo.lng.toFixed(5)} (${VIDEO_GEO_METHOD_LABEL[stored.geo.method].toLowerCase()}).`
+            : ''
+          toast.success(
+            `${where} The AI is analysing it now; casualties it finds appear in Detection Review.`,
+            `${stored.original_name} uploaded`,
+          )
           setAddVideoOpen(false)
+          handleMonitor(stored)
         },
       },
     )
@@ -220,6 +256,7 @@ export function CommandStaffMediaLibraryPage() {
         open={addVideoOpen}
         onClose={() => setAddVideoOpen(false)}
         drones={drones}
+        incidents={incidentOptions}
         existingClips={existingClips}
         onUpload={handleAddVideo}
         uploading={upload.isPending}
