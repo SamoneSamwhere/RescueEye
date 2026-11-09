@@ -1,4 +1,5 @@
 import { useEffect, useMemo } from 'react'
+import type { ReactNode } from 'react'
 import { MapContainer, Circle, CircleMarker, Tooltip, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import type { LatLngExpression } from 'leaflet'
@@ -13,6 +14,7 @@ import { MARKER_COLOR } from './markerStyle'
 import { RESPONDER_STATUS_LABEL } from '../../lib/missionStatus'
 import { FALLBACK_AOI, MIN_ZOOM, viewportBounds } from '../../lib/mapViewport'
 import type { MapMarker } from './types'
+import type { GeoPoint } from '../../types/geo'
 
 export interface GeoMapCanvasProps {
   markers: MapMarker[]
@@ -40,6 +42,10 @@ export interface GeoMapCanvasProps {
    * to leave a cluster. Off by default — the other maps keep the view you chose.
    */
   focusSelected?: boolean
+  /** Extra layers drawn under the markers, e.g. other organizations working the area. */
+  children?: ReactNode
+  /** Points the map must be able to pan to besides the markers (those extra layers). */
+  extraPoints?: GeoPoint[]
 }
 
 const DEFAULT_ZOOM = 14
@@ -109,20 +115,22 @@ function DroneAccuracy({ marker }: { marker: MapMarker }) {
  * otherwise panning the map would be undone the moment anything upstream
  * re-rendered, which makes it impossible to look around.
  */
-function ViewportController({ markers }: { markers: MapMarker[] }) {
+function ViewportController({ markers, extraPoints = [] }: { markers: MapMarker[]; extraPoints?: GeoPoint[] }) {
   const map = useMap()
   // Two keys: positions move every few seconds once responders report live GPS,
   // and re-fitting the view on each move would yank the map away from wherever
   // the operator panned. So the pannable area follows positions, but the view
   // is only re-fitted when markers are added or removed.
-  const positionsKey = markers.map((m) => `${m.location.lat},${m.location.lng}`).join('|')
+  const positionsKey =
+    markers.map((m) => `${m.location.lat},${m.location.lng}`).join('|') +
+    extraPoints.map((p) => `${p.lat},${p.lng}`).join('|')
   const membershipKey = markers.map((m) => m.id).join('|')
 
   useEffect(() => {
     // maxBounds is an init-only MapContainer prop, so it has to be re-applied
     // here whenever the data moves; otherwise the map stays clamped to whatever
     // was on screen at mount.
-    map.setMaxBounds(viewportBounds(markers.map((m) => m.location)))
+    map.setMaxBounds(viewportBounds([...markers.map((m) => m.location), ...extraPoints]))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [positionsKey])
 
@@ -259,7 +267,17 @@ export function MapLegend({ includeSelf = false, showDetections = true }: { incl
  * with no streets or terrain behind them, so nobody could tell which road a
  * casualty was near. OpenStreetMap tiles need no API key or billing.
  */
-export function GeoMapCanvas({ markers, selectedId, onSelect, selfResponderId, className, cluster = false, focusSelected = false }: GeoMapCanvasProps) {
+export function GeoMapCanvas({
+  markers,
+  selectedId,
+  onSelect,
+  selfResponderId,
+  className,
+  cluster = false,
+  focusSelected = false,
+  children,
+  extraPoints,
+}: GeoMapCanvasProps) {
   const centre = useMemo<LatLngExpression>(() => {
     if (!markers.length) return [10.315, 123.895]
     return [markers[0].location.lat, markers[0].location.lng]
@@ -289,7 +307,8 @@ export function GeoMapCanvas({ markers, selectedId, onSelect, selfResponderId, c
         style={{ background: 'var(--color-surface-inverse)' }}
       >
         <BaseTileLayer />
-        <ViewportController markers={markers} />
+        <ViewportController markers={markers} extraPoints={extraPoints} />
+        {children}
         {focusSelected ? <SelectionFocus markers={markers} selectedId={selectedId} /> : null}
 
         {cluster ? (

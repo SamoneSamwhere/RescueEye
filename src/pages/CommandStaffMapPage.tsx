@@ -13,6 +13,9 @@ import {
 } from '../components/map'
 import type { IncidentMapMarker, MapMarker, MarkerFilters } from '../components/map'
 import { useDamageMapMarkers } from '../features/command-staff'
+import { AgencyLayer } from '../components/map/AgencyLayer'
+import { AgencyLegendPanel } from '../components/map/AgencyLegendPanel'
+import { useNearbyAgencies } from '../features/operations/useOperations'
 
 function countByKind(markers: MapMarker[]): Record<MapMarker['kind'], number> {
   const counts = { INCIDENT: 0, DETECTION: 0, RESPONDER: 0, DRONE: 0 }
@@ -22,6 +25,13 @@ function countByKind(markers: MapMarker[]): Record<MapMarker['kind'], number> {
 
 export function CommandStaffMapPage() {
   const markers = useDamageMapMarkers()
+  const nearby = useNearbyAgencies()
+  const agencies = useMemo(() => nearby.data?.agencies ?? [], [nearby.data])
+  const agencyPoints = useMemo(() => agencies.flatMap((a) => [...a.incidents, ...a.responders]), [agencies])
+  const firstOpenIncident = useMemo(() => {
+    const open = markers.find((m): m is IncidentMapMarker => m.kind === 'INCIDENT' && m.status !== 'CLOSED')
+    return open ? open.location : null
+  }, [markers])
   // The dashboard preview links here as ?marker=<id>, so a marker clicked
   // there opens already selected, detail panel and all.
   const [searchParams] = useSearchParams()
@@ -50,7 +60,7 @@ export function CommandStaffMapPage() {
     <div className="flex flex-col xl:h-[calc(100vh-3.5rem)] xl:overflow-hidden">
       <PageHeader
         title="Damage Map"
-        description="Confirmed incidents, verified detections, Field Responders and drones across the survey area."
+        description="Confirmed incidents, verified detections, Field Responders, drones, and other organizations working the area."
       />
 
       <Reveal className="grid grid-cols-1 gap-4 px-4 py-4 xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(0,1fr)_340px] xl:grid-rows-[minmax(0,1fr)]">
@@ -71,7 +81,10 @@ export function CommandStaffMapPage() {
             selectedId={selectedId}
             onSelect={(marker) => setSelectedId(marker.id)}
             className="h-[60vh] min-h-[24rem] rounded-none border-0 xl:h-auto xl:flex-1"
-          />
+            extraPoints={agencyPoints}
+          >
+            <AgencyLayer agencies={agencies} />
+          </GeoMapCanvas>
         </div>
 
         <div className="flex min-h-0 flex-col gap-4">
@@ -88,6 +101,7 @@ export function CommandStaffMapPage() {
               </button>
             </div>
           ) : null}
+          <AgencyLegendPanel data={nearby.data} demoCentre={firstOpenIncident} />
           <IncidentListPanel
             incidents={visibleIncidents}
             selectedId={selectedId}

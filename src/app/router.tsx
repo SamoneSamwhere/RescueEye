@@ -32,6 +32,7 @@ import { AgencyAdminIncidentHistoryPage } from '../pages/AgencyAdminIncidentHist
 import { AgencyAdminSettingsPage } from '../pages/AgencyAdminSettingsPage'
 import { ProtectedRoute, RootRedirect } from '../features/auth'
 import { CommandStaffDataProvider } from '../features/command-staff'
+import { OperationsSync } from '../features/operations/OperationsSync'
 import { FieldResponderDataProvider } from '../features/field-responder'
 import { AgencyAdminDataProvider } from '../features/agency-admin'
 import { SystemAdminDataProvider } from '../features/system-admin'
@@ -145,6 +146,7 @@ const websiteRouter = () =>
               <CommandStaffLayout />
               {/* Outside the pages, so a casualty pops up wherever the operator is. */}
               <CasualtyAlertPopup />
+              <OperationsSync />
             </CommandStaffDataProvider>
           </ProtectedRoute>
         ),

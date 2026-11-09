@@ -18,6 +18,7 @@ from routers import live as live_router
 from routers import alerts as alerts_router
 from routers import auth as auth_router
 from routers import review as review_router
+from routers import operations as operations_router
 from routers.deps import SIGNED_IN
 from services import feed_registry
 from services import drone_ingest
@@ -114,6 +115,7 @@ app.include_router(live_router.router,      prefix="/live",       tags=["live"])
 app.include_router(auth_router.router,      prefix="/auth",       tags=["auth"])
 app.include_router(review_router.router,    prefix="/review",     tags=["review"], dependencies=[SIGNED_IN])
 app.include_router(alerts_router.router,    prefix="/alerts",     tags=["alerts"], dependencies=[SIGNED_IN])
+app.include_router(operations_router.router, prefix="/operations", tags=["operations"], dependencies=[SIGNED_IN])
 
 
 @app.get("/health", tags=["system"])
