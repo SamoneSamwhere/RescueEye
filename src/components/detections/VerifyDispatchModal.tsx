@@ -40,6 +40,8 @@ interface VerifyDispatchModalProps {
   mode: 'verify' | 'dispatch'
   /** Seeds the priority field — the AI's suggestion, which Command Staff can override. */
   suggestedPriority: IncidentPriority
+  /** Suggested team size for this casualty, e.g. "3 responders" (POST /detections/assess). */
+  suggestedTeam?: string
   candidates: ResponderCandidate[]
   /** True once the incident already has a response team — new picks join it. */
   hasTeam: boolean
@@ -60,6 +62,7 @@ export function VerifyDispatchModal({
   onClose,
   mode,
   suggestedPriority,
+  suggestedTeam,
   candidates,
   hasTeam,
   onSubmit,
@@ -164,6 +167,11 @@ export function VerifyDispatchModal({
         ) : null}
 
         <div className="shrink-0">
+          {suggestedTeam ? (
+            <p className="mb-2 text-xs text-foreground-secondary">
+              Suggested team for this casualty: <strong className="text-foreground">{suggestedTeam}</strong>
+            </p>
+          ) : null}
           <ResponderSelectionPanel candidates={candidates} selectedIds={selectedIds} onToggle={toggle} hasTeam={hasTeam} />
         </div>
       </div>

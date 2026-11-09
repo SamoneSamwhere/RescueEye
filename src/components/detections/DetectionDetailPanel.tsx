@@ -7,6 +7,8 @@ import { DETECTION_CATEGORY_LABEL, DAMAGE_CLASSIFICATION_LABEL } from '../../lib
 import { suggestPriority } from '../../lib/priority'
 import { locationAccuracyText } from '../../lib/detectionLocation'
 import { DetectionMediaPreview } from './DetectionMediaPreview'
+import { useCasualtyAssessment, TEAM_SIZE_LABEL } from '../../features/assessment/useCasualtyAssessment'
+import type { CasualtyAssessment } from '../../features/assessment/useCasualtyAssessment'
 import type { IncidentPriority } from '../../types/incident'
 import type { EnrichedDetection } from './types'
 
@@ -43,6 +45,7 @@ export function DetectionDetailPanel({
   onOpenReject,
   onOpenDispatch,
 }: DetectionDetailPanelProps) {
+  const assessment = useCasualtyAssessment(detection)
 
   if (!detection) {
     return (
@@ -53,7 +56,7 @@ export function DetectionDetailPanel({
   }
 
   const isPending = detection.validationStatus === 'PENDING'
-  const suggestedPriority = suggestPriority(detection)
+  const suggestedPriority = assessment.data?.priority ?? suggestPriority(detection)
 
   return (
     <Panel title="Detection Detail" className="xl:h-full xl:min-h-0">
@@ -108,6 +111,9 @@ export function DetectionDetailPanel({
               </div>
             </div>
           </div>
+          {detection.category === 'CASUALTY' ? (
+            <AssessmentLine assessment={assessment.data} loading={assessment.isLoading} />
+          ) : null}
         </div>
 
         {/* Human review — styled apart from the AI output above */}
@@ -198,5 +204,30 @@ export function DetectionDetailPanel({
         </div>
       </div>
     </Panel>
+  )
+}
+
+/** Suggested team size and priority, and which engine produced them. */
+function AssessmentLine({ assessment, loading }: { assessment?: CasualtyAssessment; loading: boolean }) {
+  if (loading) return <p className="mt-2 text-xs text-foreground-muted">Estimating team size…</p>
+  if (!assessment) return null
+  const byJev = assessment.source === 'jev'
+  const pct = (v: number | null) => (v == null ? '' : ` ${Math.round(v * 100)}%`)
+  return (
+    <div className="mt-2 flex items-start gap-2 border-t border-accent-border pt-2">
+      <Users className="mt-0.5 size-4 shrink-0 text-foreground-muted" />
+      <div className="min-w-0">
+        <p className="text-xs uppercase tracking-wide text-foreground-muted">Suggested Team</p>
+        <p className="text-sm font-medium text-foreground">
+          {TEAM_SIZE_LABEL[assessment.responders]}
+          <span className="font-normal text-foreground-secondary"> · {assessment.why.join(', ')}</span>
+        </p>
+        <p className="text-xs text-foreground-muted">
+          {byJev
+            ? `Jev by TypeSafe AI · team${pct(assessment.respondersConfidence)} · priority${pct(assessment.priorityConfidence)} sure`
+            : (assessment.note ?? 'Rules-based estimate (offline)')}
+        </p>
+      </div>
+    </div>
   )
 }

@@ -6,6 +6,8 @@ GET /detections/{id}/snapshot   — JPEG crop of what the model saw, so a
                                   rather than trusting a confidence number.
 POST /detections/demo           — a made-up casualty near a responder, for
                                   rehearsing the review -> dispatch flow.
+POST /detections/assess         — suggested priority and team size for one
+                                  casualty (Jev by TypeSafe AI, or rules).
 """
 import math
 import uuid
@@ -15,10 +17,25 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.responses import Response
 
 from routers.deps import require_roles
-from services import auth, detection_store, responder_registry
+from services import auth, casualty_assessment, detection_store, responder_registry
 from services.detection_store import get_recent, get_snapshot
 
 router = APIRouter()
+
+
+@router.post("/assess")
+async def assess_casualty(
+    payload: dict = Body(...),
+    user: auth.Principal = Depends(require_roles("COMMAND_STAFF", "AGENCY_ADMIN", "SYSTEM_ADMIN")),
+):
+    """
+    How urgent this casualty is and how many responders it needs - a
+    suggestion for Command Staff (services/casualty_assessment.py).
+
+    Body: what the web app knows about the casualty - confidence,
+    casualtyScore, casualtyReasons, scene. No image or location is taken.
+    """
+    return await casualty_assessment.assess(payload)
 
 
 @router.get("/recent")

@@ -18,6 +18,7 @@ import { mockUsers } from '../data/mockUsers'
 import { sourceLabelFor } from '../lib/sourceLabel'
 import { responseTeamFor } from '../lib/responseTeams'
 import { suggestPriority } from '../lib/priority'
+import { useCasualtyAssessment, TEAM_SIZE_LABEL } from '../features/assessment/useCasualtyAssessment'
 import type { DetectionValidationStatus } from '../types/detection'
 
 type StatusFilter = DetectionValidationStatus | 'ALL'
@@ -75,6 +76,9 @@ export function CommandStaffDetectionReviewPage() {
   )
 
   const selectedDetection = enrichedDetections.find((d) => d.id === selectedId) ?? null
+  // Suggested priority and team size (Jev, or rules offline). Shared with the
+  // detail panel through the query cache: one request per casualty.
+  const assessment = useCasualtyAssessment(selectedDetection)
 
   const reviewerName = selectedDetection?.reviewedByUserId
     ? mockUsers.find((u) => u.id === selectedDetection.reviewedByUserId)?.name
@@ -189,7 +193,8 @@ export function CommandStaffDetectionReviewPage() {
           open
           onClose={() => setDialog(null)}
           mode={dialog}
-          suggestedPriority={suggestPriority(selectedDetection)}
+          suggestedPriority={assessment.data?.priority ?? suggestPriority(selectedDetection)}
+          suggestedTeam={assessment.data ? TEAM_SIZE_LABEL[assessment.data.responders] : undefined}
           candidates={responderCandidates}
           hasTeam={teamMemberNames.length > 0}
           onSubmit={dialog === 'verify' ? handleVerifySubmit : handleDispatchSubmit}
