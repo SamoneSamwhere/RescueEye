@@ -44,19 +44,23 @@ def main() -> None:
     ap.add_argument("--imgsz", type=int, default=1280)
     ap.add_argument("--workers", type=int, default=6)
     ap.add_argument("--resume", action="store_true", help="continue an interrupted run from last.pt")
+    ap.add_argument("--data", default=str(DATA), help="dataset yaml (default data/small_person.yaml)")
+    ap.add_argument("--tag", default="victim_small",
+                    help="name for the run folder and candidate files, e.g. victim_lying")
     args = ap.parse_args()
+    runs = API / "runs" / args.tag
 
     from ultralytics import YOLO
 
     if args.resume:
-        model = YOLO(str(RUNS / "train/weights/last.pt"))
+        model = YOLO(str(runs / "train/weights/last.pt"))
         results = model.train(resume=True)
     else:
-        print(f"Fine-tuning {BASE.name} on {DATA.name} — {args.epochs} epochs @ {args.imgsz}px, batch {args.batch}")
+        print(f"Fine-tuning {BASE.name} on {Path(args.data).name} — {args.epochs} epochs @ {args.imgsz}px, batch {args.batch}")
         model = YOLO(str(BASE))
         t0 = time.time()
         results = model.train(
-            data=str(DATA),
+            data=args.data,
             epochs=args.epochs,
             imgsz=args.imgsz,
             batch=args.batch,
@@ -77,16 +81,16 @@ def main() -> None:
             # Shrinking is on (scale) but bounded: subjects are already tiny,
             # and a 0.9 scale range would push many below what can be learned.
             scale=0.4,
-            project=str(RUNS),
+            project=str(runs),
             name="train",
             exist_ok=True,
             plots=True,
         )
         print(f"Training took {(time.time() - t0) / 3600:.1f} h")
 
-    best = RUNS / "train/weights/best.pt"
+    best = runs / "train/weights/best.pt"
     OUT.mkdir(parents=True, exist_ok=True)
-    dst = OUT / "victim_small.pt"
+    dst = OUT / f"{args.tag}.pt"
     shutil.copy2(best, dst)
 
     rd = getattr(results, "results_dict", {}) or {}
@@ -96,16 +100,16 @@ def main() -> None:
         "precision": round(float(rd.get("metrics/precision(B)", 0)), 4),
         "recall": round(float(rd.get("metrics/recall(B)", 0)), 4),
         "base": BASE.name,
-        "dataset": "VisDrone (pedestrian+people) + HERIDAL + SeaDronesSee swimmers, tiled to 1280",
+        "dataset": Path(args.data).name,
         "imgsz": args.imgsz,
         "trained_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
-    (OUT / "victim_small_meta.json").write_text(json.dumps(meta, indent=2))
+    (OUT / f"{args.tag}_meta.json").write_text(json.dumps(meta, indent=2))
     print("Validation:", meta)
 
-    for hw, half, name in (((736, 1280), True, "victim_small_736x1280_fp16.onnx"),
-                           ((1280, 1280), False, "victim_small_1280_fp32.onnx")):
-        tmp = OUT / "victim_small_export.pt"
+    for hw, half, name in (((736, 1280), True, f"{args.tag}_736x1280_fp16.onnx"),
+                           ((1280, 1280), False, f"{args.tag}_1280_fp32.onnx")):
+        tmp = OUT / f"{args.tag}_export.pt"
         shutil.copy2(dst, tmp)
         f = YOLO(str(tmp)).export(format="onnx", imgsz=list(hw), opset=12, half=half,
                                   device=0 if half else "cpu", simplify=False)
@@ -115,7 +119,7 @@ def main() -> None:
 
     print("\nDone. Compare with the installed model:\n"
           "  .venv/Scripts/python.exe scripts/training/eval_small_person.py --victim "
-          "runs/candidates/victim_small_736x1280_fp16.onnx")
+          f"runs/candidates/{args.tag}_736x1280_fp16.onnx")
 
 
 if __name__ == "__main__":

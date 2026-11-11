@@ -25,7 +25,7 @@ CLIPS = {
     "rescue-patrol (nadir, 1 lying)": (API / "data/media/210f3df0a39f_rescue-patrol.mp4", -90, True),
     "rescue-patrol, set to angled": (API / "data/media/210f3df0a39f_rescue-patrol.mp4", -35, True),
     "flood roof (standing, kneeling)": (API / "data/media/7aed7e39637d_People_stranded_in_floodwaters_d2ea9e12.mp4", -35, False),
-    "demo_feed7 (firefighters)": (API / "data/media/e448df79167e_demo_feed7.mp4", -35, False),
+    "demo_feed7 (firefighters)": (API / "data/media/baa22505eb23_demo_feed7.mp4", -35, False),
     "DEMO_FEED10": (API / "data/media/4089f8f8fd08_DEMO_FEED10.mp4", -35, False),
     "vtest (walkers)": (Path("C:/RescueEyeData/evalclips/vtest.avi"), -35, False),
 }
@@ -60,9 +60,16 @@ def run(label: str) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", type=Path, default=API / "runs/candidates/casualty_v3_544x960_fp16.onnx")
+    ap.add_argument("--victim", type=Path, help="candidate person detector (ONNX); runs the live setup only")
     args = ap.parse_args()
     from services import yolo_model
     yolo_model.load_all()
+    if args.victim:
+        import onnxruntime as ort
+        yolo_model._victim_ort_session = ort.InferenceSession(
+            str(args.victim), providers=["DmlExecutionProvider", "CPUExecutionProvider"])
+        run(f"Live setup (installed posture model) with person detector {args.victim.name}")
+        return
     yolo_model._casualty_ort_session = None
     run("Without the casualty-posture model (keypoint posture only)")
     yolo_model._load_casualty_ort(str(args.model))

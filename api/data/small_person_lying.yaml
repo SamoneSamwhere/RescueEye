@@ -1,0 +1,10 @@
+# small_person + real lying people (Okutama). Built by prepare_lying_person.py.
+train:
+  - D:/RE RescueEye/RE-RescueEye/api/data/small_person/images/train
+  - C:/RescueEyeData/person_lying/images/train
+val:
+  - D:/RE RescueEye/RE-RescueEye/api/data/small_person/images/val
+  - C:/RescueEyeData/person_lying/images/val
+nc: 1
+names:
+  0: person
