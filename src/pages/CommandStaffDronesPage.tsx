@@ -11,6 +11,7 @@ import { useAddFeed } from '../features/media/useFeeds'
 import { useToast } from '../features/toast'
 import { ROUTES } from '../routes/paths'
 import type { Drone } from '../types/drone'
+import { PageHelpButton } from '../components/help/PageHelpButton'
 
 const CONNECT_DELAY_MS = 800
 
@@ -99,7 +100,7 @@ export function CommandStaffDronesPage() {
 
   return (
     <>
-      <PageHeader title="Drones" description="Register drones, connect them, and start their live feeds." />
+      <PageHeader title="Drones" description="Register drones, connect them, and start their live feeds." actions={<PageHelpButton guideId="drones" />} />
 
       <div className="flex flex-col gap-4 px-4 py-4">
         <Reveal>

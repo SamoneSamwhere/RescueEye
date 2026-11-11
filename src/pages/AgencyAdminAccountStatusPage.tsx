@@ -7,6 +7,7 @@ import { Button, Input, Panel } from '../components/ui'
 import { AddStaffModal, UserStatusTable } from '../components/agency-admin'
 import { useAgencyAdminData } from '../features/agency-admin'
 import type { UserRole } from '../types/user'
+import { PageHelpButton } from '../components/help/PageHelpButton'
 
 type RoleFilter = 'ALL' | Extract<UserRole, 'COMMAND_STAFF' | 'FIELD_RESPONDER'>
 type SortOrder = 'RECENT' | 'NAME'
@@ -61,6 +62,7 @@ export function AgencyAdminAccountStatusPage() {
       <PageHeader
         title="Manage Personnel / Staff"
         description="Add staff, and activate or deactivate your Command Staff and Field Responder accounts."
+        actions={<PageHelpButton guideId="add-staff" />}
       />
 
       <div className="flex flex-col gap-4 px-4 py-4">

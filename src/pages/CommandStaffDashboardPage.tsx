@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowRight } from 'lucide-react'
 import { PageHeader } from '../components/layout'
+import { WelcomeBanner } from '../components/help/WelcomeBanner'
 import { Reveal } from '../components/landing/Reveal'
 import { Panel } from '../components/ui'
 import { BarList, ColumnChart, DonutBreakdown } from '../components/dashboard'
@@ -102,6 +103,7 @@ export function CommandStaffDashboardPage() {
 
       <div className="px-4 py-4">
         <div className="flex flex-col gap-4">
+          <WelcomeBanner />
           <Reveal delayMs={100}>
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
               <Panel title="Detection Review" actions={<PanelLink to={ROUTES.commandStaffDetections} label="Review" />}>

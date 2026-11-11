@@ -9,12 +9,14 @@ export const ROUTES = {
   systemAdminAgencyValidationDetail: '/system-admin/agencies/validation/:agencyId',
   systemAdminAgencyStatus: '/system-admin/agencies/status',
   systemAdminSettings: '/system-admin/settings',
+  systemAdminHelp: '/system-admin/help',
   agencyAdmin: '/agency-admin',
   agencyAdminUserCreation: '/agency-admin/users/new',
   agencyAdminAccountStatus: '/agency-admin/users',
   agencyAdminTeams: '/agency-admin/teams',
   agencyAdminIncidentHistory: '/agency-admin/incident-history',
   agencyAdminSettings: '/agency-admin/settings',
+  agencyAdminHelp: '/agency-admin/help',
   commandStaff: '/command-staff',
   commandStaffDrones: '/command-staff/drones',
   commandStaffMediaLibrary: '/command-staff/media-library',
@@ -25,10 +27,12 @@ export const ROUTES = {
   commandStaffIncidentDetail: '/command-staff/incidents/:incidentId',
   commandStaffMap: '/command-staff/map',
   commandStaffSettings: '/command-staff/settings',
+  commandStaffHelp: '/command-staff/help',
   fieldResponder: '/field-responder',
   fieldResponderMap: '/field-responder/map',
   fieldResponderProfile: '/field-responder/profile',
   fieldResponderSettings: '/field-responder/settings',
+  fieldResponderHelp: '/field-responder/help',
   fieldResponderNotifications: '/field-responder/notifications',
   fieldResponderMissionDetail: '/field-responder/mission/:missionId',
   fieldResponderMissionNavigate: '/field-responder/mission/:missionId/navigate',
@@ -64,4 +68,19 @@ export function settingsRouteFor(role: UserRole | undefined): string | null {
     default:
       return null
   }
+}
+
+/** The "How to use RescueEye" page for a role; `guideId` opens one guide on it. */
+export function helpRouteFor(role: UserRole | undefined, guideId?: string): string | null {
+  const base =
+    role === 'SYSTEM_ADMIN'
+      ? ROUTES.systemAdminHelp
+      : role === 'AGENCY_ADMIN'
+        ? ROUTES.agencyAdminHelp
+        : role === 'COMMAND_STAFF'
+          ? ROUTES.commandStaffHelp
+          : role === 'FIELD_RESPONDER'
+            ? ROUTES.fieldResponderHelp
+            : null
+  return base && guideId ? `${base}#${guideId}` : base
 }

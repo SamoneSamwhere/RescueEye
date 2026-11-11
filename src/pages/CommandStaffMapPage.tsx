@@ -12,6 +12,7 @@ import {
   applyMarkerFilters,
 } from '../components/map'
 import type { IncidentMapMarker, MapMarker, MarkerFilters } from '../components/map'
+import { PageHelpButton } from '../components/help/PageHelpButton'
 import { useDamageMapMarkers } from '../features/command-staff'
 import { AgencyLayer } from '../components/map/AgencyLayer'
 import { AgencyLegendPanel } from '../components/map/AgencyLegendPanel'
@@ -61,6 +62,7 @@ export function CommandStaffMapPage() {
       <PageHeader
         title="Damage Map"
         description="Confirmed incidents, verified detections, Field Responders, drones, and other organizations working the area."
+        actions={<PageHelpButton guideId="damage-map" />}
       />
 
       <Reveal className="grid grid-cols-1 gap-4 px-4 py-4 xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(0,1fr)_340px] xl:grid-rows-[minmax(0,1fr)]">

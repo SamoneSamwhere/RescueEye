@@ -18,6 +18,7 @@ import { useToast } from '../features/toast'
 import { mockUsers } from '../data/mockUsers'
 import { useMediaLibrary, useUploadMedia } from '../features/media'
 import { useMonitorMedia } from '../features/media/useFeeds'
+import { PageHelpButton } from '../components/help/PageHelpButton'
 import { VIDEO_GEO_METHOD_LABEL } from '../types/media'
 import type { StoredMedia } from '../types/media'
 import { incidentDetection } from '../types/detection'
@@ -198,6 +199,7 @@ export function CommandStaffMediaLibraryPage() {
       <PageHeader
         title="Media Library"
         description="Upload recorded footage, play it with AI detection, and review what has been stored."
+        actions={<PageHelpButton guideId="media-library" />}
       />
 
       <div className="flex flex-col gap-4 px-4 py-4">

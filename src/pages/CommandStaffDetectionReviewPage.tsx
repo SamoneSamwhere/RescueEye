@@ -20,6 +20,7 @@ import { responseTeamFor } from '../lib/responseTeams'
 import { suggestPriority } from '../lib/priority'
 import { useCasualtyAssessment, TEAM_SIZE_LABEL } from '../features/assessment/useCasualtyAssessment'
 import type { DetectionValidationStatus } from '../types/detection'
+import { PageHelpButton } from '../components/help/PageHelpButton'
 
 type StatusFilter = DetectionValidationStatus | 'ALL'
 
@@ -163,6 +164,7 @@ export function CommandStaffDetectionReviewPage() {
           MAX_REVIEW_CONFIDENCE * 100,
         )}% confidence. Verify to confirm an incident and alert the nearest available responders; reject to discard it —
         neither happens automatically.`}
+        actions={<PageHelpButton guideId="detection-review" />}
       />
 
       <div className="flex min-h-0 flex-col gap-4 px-4 py-4 xl:flex-1">

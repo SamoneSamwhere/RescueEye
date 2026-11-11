@@ -1,4 +1,5 @@
 import { PageHeader } from '../components/layout'
+import { WelcomeBanner } from '../components/help/WelcomeBanner'
 import { Panel } from '../components/ui'
 import { Reveal } from '../components/landing/Reveal'
 import { BarList, ColumnChart, DonutChart, DonutBreakdown } from '../components/dashboard'
@@ -74,6 +75,7 @@ export function SystemAdminDashboardPage() {
       <PageHeader title="System Admin Dashboard" description="Registered agencies across the platform." />
 
       <div className="flex flex-col gap-4 px-4 py-4">
+        <WelcomeBanner />
         <Reveal>
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
             <Panel title="Registrations by Status" className="lg:col-span-2">

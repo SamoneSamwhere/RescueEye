@@ -9,6 +9,7 @@ import { mockDrones } from '../data/mockDrones'
 import { mockUsers } from '../data/mockUsers'
 import { sourceLabelFor } from '../lib/sourceLabel'
 import { incidentDetection } from '../types/detection'
+import { PageHelpButton } from '../components/help/PageHelpButton'
 
 export function CommandStaffIncidentsPage() {
   const { incidents, detections, mediaAssets } = useCommandStaffData()
@@ -75,6 +76,7 @@ export function CommandStaffIncidentsPage() {
       <PageHeader
         title="Incident Management"
         description="Confirmed incidents created from verified AI detections."
+        actions={<PageHelpButton guideId="incidents" />}
       />
 
       <div className="flex flex-col gap-4 px-4 py-4">

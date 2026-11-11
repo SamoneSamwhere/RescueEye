@@ -9,6 +9,7 @@ import { formatDateTime } from '../lib/formatDateTime'
 import { RESPONSE_TEAM_STATUS_LABEL } from '../lib/responseTeams'
 import type { ResponseTeamStatus } from '../lib/responseTeams'
 import { mockUsers } from '../data/mockUsers'
+import { PageHelpButton } from '../components/help/PageHelpButton'
 
 type StatusFilter = ResponseTeamStatus | 'ALL'
 
@@ -52,6 +53,7 @@ export function AgencyAdminTeamsPage() {
       <PageHeader
         title="Response Teams"
         description="Monitor the teams Command Staff form when they alert your responders to an incident."
+        actions={<PageHelpButton guideId="teams" />}
       />
 
       <div className="flex flex-col gap-4 px-4 py-4">

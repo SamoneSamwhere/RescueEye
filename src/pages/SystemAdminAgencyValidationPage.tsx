@@ -4,6 +4,7 @@ import { Reveal } from '../components/landing/Reveal'
 import { Drawer } from '../components/ui'
 import { AgencyReviewActions, AgencyReviewDetails, AgencyValidationList } from '../components/system-admin'
 import { useSystemAdminData } from '../features/system-admin'
+import { PageHelpButton } from '../components/help/PageHelpButton'
 
 export function SystemAdminAgencyValidationPage() {
   const { agencies, resubmitAgency } = useSystemAdminData()
@@ -28,6 +29,7 @@ export function SystemAdminAgencyValidationPage() {
       <PageHeader
         title="Agency Validation"
         description="Review pending agency registrations, inspect submitted documents, and accept or reject them."
+        actions={<PageHelpButton guideId="validation" />}
       />
       <div className="flex flex-col gap-4 px-4 py-4">
         <Reveal>

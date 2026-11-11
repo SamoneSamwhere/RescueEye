@@ -8,6 +8,7 @@ import { useActivityLog } from '../hooks/useActivityLog'
 import { mockUsers } from '../data/mockUsers'
 import { commandStaffIncidentDetailPath } from '../routes/paths'
 import type { ActivityEvent } from '../lib/incidentEvents'
+import { PageHelpButton } from '../components/help/PageHelpButton'
 
 export function CommandStaffLogsPage() {
   const { detections, incidents, missions, mediaAssets } = useCommandStaffData()
@@ -34,6 +35,7 @@ export function CommandStaffLogsPage() {
       <PageHeader
         title="Logs"
         description="Everything that has happened across your incidents, newest first. Click an entry for the detection behind it."
+        actions={<PageHelpButton guideId="logs" />}
       />
 
       <Reveal className="px-4 py-4">

@@ -1,4 +1,5 @@
 import { PageHeader } from '../components/layout'
+import { WelcomeBanner } from '../components/help/WelcomeBanner'
 import { Panel } from '../components/ui'
 import { BarList, ColumnChart, DonutBreakdown } from '../components/dashboard'
 import { Reveal } from '../components/landing/Reveal'
@@ -70,6 +71,7 @@ export function AgencyAdminDashboardPage() {
       <PageHeader title="Dashboard" description={`Administration for ${session.agencyName ?? 'your organization'}`} />
 
       <div className="flex flex-col gap-4 px-4 py-4">
+        <WelcomeBanner />
         <Reveal>
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
             <Panel title="Accounts by Status">

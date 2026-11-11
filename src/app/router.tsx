@@ -7,6 +7,8 @@ import { SystemAdminAgencyValidationPage } from '../pages/SystemAdminAgencyValid
 import { SystemAdminAgencyValidationDetailPage } from '../pages/SystemAdminAgencyValidationDetailPage'
 import { SystemAdminAgencyStatusPage } from '../pages/SystemAdminAgencyStatusPage'
 import { SystemAdminSettingsPage } from '../pages/SystemAdminSettingsPage'
+import { HelpPage } from '../pages/HelpPage'
+import { FieldResponderHelpPage } from '../pages/FieldResponderHelpPage'
 import { CommandStaffDashboardPage } from '../pages/CommandStaffDashboardPage'
 import { CommandStaffDronesPage } from '../pages/CommandStaffDronesPage'
 import { CommandStaffMediaLibraryPage } from '../pages/CommandStaffMediaLibraryPage'
@@ -59,6 +61,7 @@ const fieldResponderRoutes: RouteObject = {
           { path: ROUTES.fieldResponderMap, element: <FieldResponderMapPage /> },
           { path: ROUTES.fieldResponderProfile, element: <FieldResponderProfilePage /> },
           { path: ROUTES.fieldResponderSettings, element: <FieldResponderSettingsPage /> },
+          { path: ROUTES.fieldResponderHelp, element: <FieldResponderHelpPage /> },
           { path: ROUTES.fieldResponderNotifications, element: <FieldResponderNotificationsPage /> },
           { path: ROUTES.fieldResponderMissionDetail, element: <FieldResponderMissionDetailPage /> },
           { path: ROUTES.fieldResponderMissionNavigate, element: <FieldResponderNavigationPage /> },
@@ -120,6 +123,7 @@ const websiteRouter = () =>
           { path: ROUTES.systemAdminAgencyValidationDetail, element: <SystemAdminAgencyValidationDetailPage /> },
           { path: ROUTES.systemAdminAgencyStatus, element: <SystemAdminAgencyStatusPage /> },
           { path: ROUTES.systemAdminSettings, element: <SystemAdminSettingsPage /> },
+          { path: ROUTES.systemAdminHelp, element: <HelpPage /> },
         ],
       },
       {
@@ -137,6 +141,7 @@ const websiteRouter = () =>
           { path: ROUTES.agencyAdminTeams, element: <AgencyAdminTeamsPage /> },
           { path: ROUTES.agencyAdminIncidentHistory, element: <AgencyAdminIncidentHistoryPage /> },
           { path: ROUTES.agencyAdminSettings, element: <AgencyAdminSettingsPage /> },
+          { path: ROUTES.agencyAdminHelp, element: <HelpPage /> },
         ],
       },
       {
@@ -161,6 +166,7 @@ const websiteRouter = () =>
           { path: ROUTES.commandStaffIncidentDetail, element: <CommandStaffIncidentDetailPage /> },
           { path: ROUTES.commandStaffMap, element: <CommandStaffMapPage /> },
           { path: ROUTES.commandStaffSettings, element: <CommandStaffSettingsPage /> },
+          { path: ROUTES.commandStaffHelp, element: <HelpPage /> },
         ],
       },
       fieldResponderRoutes,

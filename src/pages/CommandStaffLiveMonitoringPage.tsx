@@ -7,6 +7,7 @@ import { Panel, EmptyState, Button, LoadingState } from '../components/ui'
 import { LiveFeedPanel } from '../components/media'
 import { useFeeds, useCloseFeed } from '../features/media/useFeeds'
 import { ROUTES } from '../routes/paths'
+import { PageHelpButton } from '../components/help/PageHelpButton'
 
 export function CommandStaffLiveMonitoringPage() {
   const [detectEnabled, setDetectEnabled] = useState(true)
@@ -33,6 +34,7 @@ export function CommandStaffLiveMonitoringPage() {
       <PageHeader
         title="Live Monitoring"
         description="Live drone feeds, full-size, with AI detection running over them."
+        actions={<PageHelpButton guideId="live-monitoring" />}
       />
 
       <div className="flex flex-col gap-4 px-4 py-4">
