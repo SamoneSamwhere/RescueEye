@@ -14,6 +14,8 @@ export interface Mission {
   dispatchedByUserId: string
   status: MissionStatus
   dispatchedAt: string
+  /** The standing team this responder was sent with (api/services/team_store.py), if any. */
+  teamId?: string
   acceptedAt?: string
   declinedAt?: string
   enRouteAt?: string

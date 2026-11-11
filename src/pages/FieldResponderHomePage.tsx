@@ -1,5 +1,6 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { WelcomeBanner } from '../components/help/WelcomeBanner'
+import { MyTeamCard } from '../components/field-responder/MyTeamCard'
 import { Radar, MapPin, ChevronRight, Route, CheckCircle2, ListChecks, XCircle, Satellite } from 'lucide-react'
 import { MobileShell } from '../components/layout'
 import { Card, PriorityBadge } from '../components/ui'
@@ -76,6 +77,7 @@ export function FieldResponderHomePage() {
     <MobileShell navItems={FIELD_RESPONDER_NAV_ITEMS} notifications={notifications}>
       <div className="flex flex-col gap-5 px-4 pb-6 pt-5">
         <WelcomeBanner />
+        <MyTeamCard />
         <Reveal delayMs={80} className="flex flex-col gap-4">
           {showPending ? (
             <MissionNotificationCard

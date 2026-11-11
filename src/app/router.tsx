@@ -8,6 +8,7 @@ import { SystemAdminAgencyValidationDetailPage } from '../pages/SystemAdminAgenc
 import { SystemAdminAgencyStatusPage } from '../pages/SystemAdminAgencyStatusPage'
 import { SystemAdminSettingsPage } from '../pages/SystemAdminSettingsPage'
 import { HelpPage } from '../pages/HelpPage'
+import { CommandStaffTeamPage } from '../pages/CommandStaffTeamPage'
 import { FieldResponderHelpPage } from '../pages/FieldResponderHelpPage'
 import { CommandStaffDashboardPage } from '../pages/CommandStaffDashboardPage'
 import { CommandStaffDronesPage } from '../pages/CommandStaffDronesPage'
@@ -35,6 +36,7 @@ import { AgencyAdminSettingsPage } from '../pages/AgencyAdminSettingsPage'
 import { ProtectedRoute, RootRedirect } from '../features/auth'
 import { CommandStaffDataProvider } from '../features/command-staff'
 import { OperationsSync } from '../features/operations/OperationsSync'
+import { TeamAutoReplace } from '../features/teams/TeamAutoReplace'
 import { FieldResponderDataProvider } from '../features/field-responder'
 import { AgencyAdminDataProvider } from '../features/agency-admin'
 import { SystemAdminDataProvider } from '../features/system-admin'
@@ -152,6 +154,7 @@ const websiteRouter = () =>
               {/* Outside the pages, so a casualty pops up wherever the operator is. */}
               <CasualtyAlertPopup />
               <OperationsSync />
+              <TeamAutoReplace />
             </CommandStaffDataProvider>
           </ProtectedRoute>
         ),
@@ -167,6 +170,7 @@ const websiteRouter = () =>
           { path: ROUTES.commandStaffMap, element: <CommandStaffMapPage /> },
           { path: ROUTES.commandStaffSettings, element: <CommandStaffSettingsPage /> },
           { path: ROUTES.commandStaffHelp, element: <HelpPage /> },
+          { path: ROUTES.commandStaffTeam, element: <CommandStaffTeamPage /> },
         ],
       },
       fieldResponderRoutes,

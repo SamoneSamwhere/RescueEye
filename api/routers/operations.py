@@ -67,7 +67,20 @@ async def place_demo_agency(payload: dict = Body(...), user: auth.Principal = De
     except (KeyError, TypeError, ValueError):
         raise HTTPException(422, "'lat' and 'lng' are required.")
     lead = bool(payload.get("lead", True))
-    when = datetime.now(timezone.utc) + (timedelta(days=-1) if lead else timedelta(minutes=1))
+    # Leading means its incident predates every one of yours here; supporting, that it came after.
+    mine = [a for a in ops.nearby(me)["agencies"] if a["isSelf"]]
+    times = []
+    for i in (mine[0]["incidents"] if mine else []):
+        try:
+            t = datetime.fromisoformat(str(i.get("verifiedAt")).replace("Z", "+00:00"))
+            times.append(t if t.tzinfo else t.replace(tzinfo=timezone.utc))
+        except ValueError:
+            pass
+    now = datetime.now(timezone.utc)
+    if lead:
+        when = (min(times) if times else now) - timedelta(hours=1)
+    else:
+        when = max([*times, now]) + timedelta(minutes=1)
     incident = {**_offset(lat, lng, 300, 250), "id": "demo-1", "verifiedAt": when.isoformat()}
     responders = [{**_offset(lat, lng, e, n), "busy": b}
                   for e, n, b in ((260, 180, True), (340, 300, True), (380, 140, True), (-200, 420, False))]

@@ -24,6 +24,7 @@ type LiveMessage =
   | { type: 'responder_location'; responder: LiveResponderPosition }
   | { type: 'mission'; mission: Mission }
   | { type: 'alert'; alert: AlertRecord }
+  | { type: 'team'; team: unknown }
 
 /** What the app sends up the socket: this responder's GPS fix. */
 export interface OutgoingLocationMessage {
@@ -95,6 +96,9 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
       } else if (message.type === 'alert') {
         // Delivery status (SENT/DELIVERED/FAILED/READ) for Command Staff, and new alerts for the responder.
         upsertAlert(queryClient, message.alert)
+      } else if (message.type === 'team') {
+        // A team was formed, changed or disbanded on some console: refetch.
+        void queryClient.invalidateQueries({ queryKey: ['teams'] })
       }
     }
 

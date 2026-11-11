@@ -10,6 +10,7 @@ import type { ResponderCandidate } from '../components/responders'
 import type { Detection } from '../types/detection'
 import type { Incident } from '../types/incident'
 import type { Mission } from '../types/mission'
+import type { GeoPoint } from '../types/geo'
 
 /**
  * Builds the nearest-first list of Field Responder dispatch candidates for
@@ -26,6 +27,19 @@ export function useResponderCandidates(
   incidents: Incident[],
   missions: Mission[],
 ): ResponderCandidate[] {
+  return useResponderCandidatesNear(detection ? (detection.location ?? null) : undefined, agencyId, incidents, missions)
+}
+
+/**
+ * The same list, nearest-first from any point - where a commander is, or an
+ * incident. `point` null ranks without distances; undefined returns nothing.
+ */
+export function useResponderCandidatesNear(
+  point: GeoPoint | null | undefined,
+  agencyId: string | undefined,
+  incidents: Incident[],
+  missions: Mission[],
+): ResponderCandidate[] {
   const { positions } = useLiveUpdates()
   const { data: dbResponders = [] } = useQuery({
     queryKey: ['agencyResponders', agencyId],
@@ -35,7 +49,7 @@ export function useResponderCandidates(
   })
 
   return useMemo(() => {
-    if (!detection || !agencyId) return []
+    if (point === undefined || !agencyId) return []
 
     const agencyResponders = [
       ...mockUsers.filter((u) => u.role === 'FIELD_RESPONDER' && u.agencyId === agencyId),
@@ -63,7 +77,7 @@ export function useResponderCandidates(
           name: responder.name,
           accountStatus: responder.accountStatus,
           currentLocation,
-          distanceKm: currentLocation && detection.location ? distanceKm(currentLocation, detection.location) : null,
+          distanceKm: currentLocation && point ? distanceKm(currentLocation, point) : null,
           missionStatus: activeMission?.status,
           missionIncidentPriority: missionIncident?.priority,
           isAvailable: responder.accountStatus === 'ACTIVE' && !activeMission,
@@ -74,5 +88,5 @@ export function useResponderCandidates(
         if (b.distanceKm === null) return -1
         return a.distanceKm - b.distanceKm
       })
-  }, [detection, agencyId, incidents, missions, positions, dbResponders])
+  }, [point, agencyId, incidents, missions, positions, dbResponders])
 }

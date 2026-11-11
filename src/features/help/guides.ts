@@ -38,13 +38,32 @@ const COMMAND_STAFF: RoleHelp = {
   intro:
     'You run the operation from the console: connect drones, watch their video while the AI looks for casualties, confirm what it finds, and send Field Responders. The AI never acts on its own. Every incident and every alert starts with your decision.',
   quickStart: [
+    'Form your team on My Team: the 3 nearest available Field Responders.',
     'Register and connect your drone on Drones.',
     'Watch its video on Live Monitoring. The AI marks people as it finds them.',
     'When a "Possible casualty" card pops up, open it in Detection Review.',
-    'Check the evidence, then Verify (to create an incident and alert responders) or Reject.',
+    'Check the evidence, then Verify (your team is alerted) or Reject.',
     'Follow the rescue on Incidents and the Damage Map until you close the incident.',
   ],
   guides: [
+    {
+      id: 'my-team',
+      title: 'Form your team',
+      summary: 'Each commander leads one team of Field Responders for the operation. Every casualty you verify is sent to it.',
+      steps: [
+        'Open My Team.',
+        'Choose the area: press Use my location, or pick an open incident.',
+        'Choose the team size (3 by default). RescueEye lists the nearest available responders who are not on another team.',
+        'Press Form team. Each member sees "You\'re on Team …" on their phone.',
+        'To swap someone, press Replace: the next nearest available responder takes their place.',
+        'Press Disband team when the operation is over.',
+      ],
+      notes: [
+        'A responder can be on only one team, so two commanders never get the same person.',
+        'If a member declines a mission, RescueEye sends the next nearest available responder instead and puts them on your team. You get a message saying who.',
+        'Each team gets a callsign: Alpha, Bravo, Charlie, and so on.',
+      ],
+    },
     {
       id: 'drones',
       title: 'Connect a drone',
@@ -97,10 +116,13 @@ const COMMAND_STAFF: RoleHelp = {
       steps: [
         'Open Detection Review and pick a detection from the queue on the right.',
         'Check the photo and the AI output: confidence, location, suggested priority and suggested team.',
-        'If it is real, press Verify & Dispatch. Add notes, set the priority, tick the responders to alert (nearest are listed first), then confirm.',
+        'If it is real, press Verify & Dispatch. Add notes and check the priority. Your team is already chosen: its available members will be alerted.',
+        'If the casualty needs more people than your team has, the nearest free responders are added as backup. They join your team.',
+        'Press the confirm button. To alert different people, open "Change who is alerted" first.',
         'If it is wrong, press Reject and say why. This helps improve the AI.',
       ],
       notes: [
+        'No team yet? You can still tick responders by hand, but forming a team on My Team makes every verification one click.',
         'Suggested Team estimates how many responders this casualty needs (for example 4 or more when someone is partly buried). It comes from the Jev AI model, or from simple rules when there is no internet. It is only a suggestion; you decide.',
         'A detection with no location cannot be verified. Fix the drone\'s position first (see "I\'m flying it").',
         'You can verify without alerting anyone and alert responders later from the same screen.',
@@ -203,7 +225,11 @@ const FIELD_RESPONDER: RoleHelp = {
         'Press Arrive On-Site when you reach the casualty.',
         'Press Report Rescue Complete when the rescue is finished.',
       ],
-      notes: ['Your status (Alerted, Accepted, En Route, On Site, Cleared) shows live on the Command Staff console.'],
+      notes: [
+        'Your status (Alerted, Accepted, En Route, On Site, Cleared) shows live on the Command Staff console.',
+        'Home shows which team you are on ("You\'re on Team Alpha"), who leads it and who you go out with. Your whole team is alerted together.',
+        'If you decline, the next nearest available responder is sent instead.',
+      ],
     },
     {
       id: 'pilot',
@@ -270,7 +296,8 @@ const AGENCY_ADMIN: RoleHelp = {
       title: 'Response Teams and Mission History',
       summary: 'See who Command Staff sent where.',
       notes: [
-        'Response Teams shows the teams formed for each incident and whether they are still working.',
+        'Standing teams: the team each Command Staff member leads (Team Alpha, Bravo, …) and who is on it.',
+        'Incident teams: who went to each incident and whether they are still working.',
         'Mission History lists every mission your Field Responders have been sent on, with its priority and outcome.',
       ],
     },

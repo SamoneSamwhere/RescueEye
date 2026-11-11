@@ -19,6 +19,7 @@ import { sourceLabelFor } from '../lib/sourceLabel'
 import { responseTeamFor } from '../lib/responseTeams'
 import { suggestPriority } from '../lib/priority'
 import { useCasualtyAssessment, TEAM_SIZE_LABEL } from '../features/assessment/useCasualtyAssessment'
+import { membersOfOtherTeams, useAddBackup, useMyTeam, useTeams } from '../features/teams/useTeams'
 import type { DetectionValidationStatus } from '../types/detection'
 import { PageHelpButton } from '../components/help/PageHelpButton'
 
@@ -97,6 +98,11 @@ export function CommandStaffDetectionReviewPage() {
   const responderCandidates = useResponderCandidates(selectedDetection, session?.agencyId, incidents, missions)
   const [dialog, setDialog] = useState<'verify' | 'dispatch' | 'reject' | null>(null)
   const toast = useToast()
+  // The commander's standing team: verifying sends the casualty to it.
+  const myTeam = useMyTeam().data ?? null
+  const allTeams = useTeams().data
+  const addBackup = useAddBackup()
+  const suggestedCount = assessment.data ? (assessment.data.responders === '4+' ? 4 : Number(assessment.data.responders)) : undefined
 
   useEffect(() => {
     setDialog(null)
@@ -109,9 +115,19 @@ export function CommandStaffDetectionReviewPage() {
   const teamMemberNames = team ? team.members.map((m) => nameOf(m.responderUserId)) : []
 
   /** Alerts responders for an incident and describes what happened, for the toast. */
-  function alert(incidentId: string, responderIds: string[], detectionId?: string): string | null {
+  function alert(incidentId: string, responderIds: string[], detectionId?: string, backupIds: string[] = []): string | null {
     if (responderIds.length === 0) return null
-    const dispatched = dispatchResponders(incidentId, responderIds, detectionId)
+    const dispatched = dispatchResponders(
+      incidentId,
+      responderIds,
+      detectionId,
+      myTeam ? { id: myTeam.id, name: myTeam.name } : undefined,
+    )
+    // Backup alerted for this casualty joins the team for the rest of the operation.
+    const joined = backupIds.filter((id) => dispatched.some((m) => m.responderUserId === id))
+    if (myTeam && joined.length) {
+      addBackup.mutate({ teamId: myTeam.id, members: joined.map((id) => ({ id, name: nameOf(id) })) })
+    }
     if (dispatched.length === 0) return null
     const teamSize = (team?.members.length ?? 0) + dispatched.length
     return `Alerted ${dispatched.map((m) => nameOf(m.responderUserId)).join(', ')}. The response team now has ${teamSize} ${
@@ -119,7 +135,7 @@ export function CommandStaffDetectionReviewPage() {
     } — each mission starts as PENDING.`
   }
 
-  async function handleVerifySubmit({ priority, notes, responderIds }: VerifyDispatchSubmit) {
+  async function handleVerifySubmit({ priority, notes, responderIds, backupIds }: VerifyDispatchSubmit) {
     if (!selectedDetection) return
     const detectionId = selectedDetection.id
     let incidentId: string | null
@@ -134,15 +150,15 @@ export function CommandStaffDetectionReviewPage() {
     }
     if (!incidentId) return
     toast.success(`Confirmed Incident ${incidentId} created.`, 'Detection verified')
-    const alerted = alert(incidentId, responderIds, detectionId)
-    if (alerted) toast.success(alerted, 'Responders alerted')
+    const alerted = alert(incidentId, responderIds, detectionId, backupIds)
+    if (alerted) toast.success(alerted, myTeam ? `Team ${myTeam.name} alerted` : 'Responders alerted')
     else toast.info('No responders alerted yet — use Alert Responders when you are ready.')
     setDialog(null)
   }
 
-  function handleDispatchSubmit({ responderIds }: VerifyDispatchSubmit) {
+  function handleDispatchSubmit({ responderIds, backupIds }: VerifyDispatchSubmit) {
     if (!linkedIncident) return
-    const alerted = alert(linkedIncident.id, responderIds)
+    const alerted = alert(linkedIncident.id, responderIds, undefined, backupIds)
     if (alerted) toast.success(alerted, 'Responders alerted')
     setDialog(null)
   }
@@ -197,6 +213,9 @@ export function CommandStaffDetectionReviewPage() {
           mode={dialog}
           suggestedPriority={assessment.data?.priority ?? suggestPriority(selectedDetection)}
           suggestedTeam={assessment.data ? TEAM_SIZE_LABEL[assessment.data.responders] : undefined}
+          suggestedCount={suggestedCount}
+          myTeam={myTeam ? { id: myTeam.id, name: myTeam.name, memberIds: myTeam.members.map((m) => m.id) } : null}
+          otherTeamMemberIds={membersOfOtherTeams(allTeams, myTeam?.id)}
           candidates={responderCandidates}
           hasTeam={teamMemberNames.length > 0}
           onSubmit={dialog === 'verify' ? handleVerifySubmit : handleDispatchSubmit}

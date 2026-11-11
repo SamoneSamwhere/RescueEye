@@ -65,7 +65,12 @@ interface CommandStaffDataContextValue {
   updateIncidentPriority: (incidentId: string, priority: IncidentPriority) => void
   /** Alerts the selected responders; together they form (or join) the incident's response team. */
   /** `detectionId` names the incident's source detection when it was verified in this same action. */
-  dispatchResponders: (incidentId: string, responderUserIds: string[], detectionId?: string) => Mission[]
+  dispatchResponders: (
+    incidentId: string,
+    responderUserIds: string[],
+    detectionId?: string,
+    team?: { id: string; name: string },
+  ) => Mission[]
   closeIncident: (incidentId: string) => void
   captureMedia: (
     sourceType: MediaSourceType,
@@ -441,7 +446,12 @@ export function CommandStaffDataProvider({ children }: { children: ReactNode }) 
    * more responders later adds them to it. Anyone already on an active mission
    * is skipped, so nobody is working two incidents at once.
    */
-  function dispatchResponders(incidentId: string, responderUserIds: string[], detectionId?: string): Mission[] {
+  function dispatchResponders(
+    incidentId: string,
+    responderUserIds: string[],
+    detectionId?: string,
+    team?: { id: string; name: string },
+  ): Mission[] {
     const busy = new Set(
       allMissions.filter((m) => ACTIVE_MISSION_STATUSES.has(m.status)).map((m) => m.responderUserId),
     )
@@ -454,7 +464,11 @@ export function CommandStaffDataProvider({ children }: { children: ReactNode }) 
     )
     const realAlerts = isDbId(incidentId) && !!session && isDbId(session.id)
     const others = toDispatch.length - 1
-    const teamNote = others > 0 ? ` You are part of a ${toDispatch.length}-person response team.` : ''
+    const teamNote = team
+      ? ` You are part of Team ${team.name}.`
+      : others > 0
+        ? ` You are part of a ${toDispatch.length}-person response team.`
+        : ''
 
     const newMissions = toDispatch.map((responderUserId): Mission => {
       const mission: Mission = {
@@ -464,6 +478,7 @@ export function CommandStaffDataProvider({ children }: { children: ReactNode }) 
         dispatchedByUserId: session?.id ?? '',
         status: 'PENDING',
         dispatchedAt: nowIso,
+        ...(team ? { teamId: team.id } : {}),
       }
       addMission(mission)
       if (realAlerts && isDbId(responderUserId)) return mission

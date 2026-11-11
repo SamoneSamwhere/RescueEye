@@ -28,6 +28,7 @@ export const ROUTES = {
   commandStaffMap: '/command-staff/map',
   commandStaffSettings: '/command-staff/settings',
   commandStaffHelp: '/command-staff/help',
+  commandStaffTeam: '/command-staff/team',
   fieldResponder: '/field-responder',
   fieldResponderMap: '/field-responder/map',
   fieldResponderProfile: '/field-responder/profile',
