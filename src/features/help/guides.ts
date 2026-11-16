@@ -104,6 +104,7 @@ const COMMAND_STAFF: RoleHelp = {
         'Read the card: the photo, how sure the AI is, and why.',
         'Press Verify casualty to confirm it straight away, or Open in Detection Review to look closer first.',
         'Press × if it is clearly wrong. You can still find it in Detection Review.',
+        'Press – (minimise) if it is covering something you need. It shrinks to a small pill in the corner; click the pill to open it again.',
       ],
       notes: [
         'The card fades away after 15 seconds. Hovering over it pauses the countdown. A casualty whose card faded is never lost; it waits in Detection Review.',

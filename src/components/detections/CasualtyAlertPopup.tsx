@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { AlertTriangle, X } from 'lucide-react'
+import { AlertTriangle, ChevronUp, Minus, X } from 'lucide-react'
 import { Button } from '../ui'
 import { useCommandStaffData } from '../../features/command-staff'
 import { useToast } from '../../features/toast'
@@ -21,14 +21,20 @@ export const CASUALTY_POPUP_CONFIDENCE = CASUALTY_REVIEW_CONFIDENCE
  * Not a modal: it sits in a corner so the feed behind it stays watchable, and
  * dismissing it only hides this casualty — a new one pops up again. Detection
  * Review already lists the queue, so the pop-up stays out of the way there.
+ *
+ * Minimise shrinks it to a small pill, so the buttons it was covering can be
+ * used; the pill reopens it. A casualty dismissed (or faded away) is
+ * remembered on this device, so a reload does not bring the same one back.
  */
 export function CasualtyAlertPopup() {
   const { detections, verifyDetection } = useCommandStaffData()
   const toast = useToast()
   const navigate = useNavigate()
   const { pathname } = useLocation()
-  const [dismissed, setDismissed] = useState<ReadonlySet<string>>(() => new Set())
+  const [dismissed, setDismissed] = useState<ReadonlySet<string>>(readDismissed)
   const [verifying, setVerifying] = useState(false)
+  // Minimised per casualty: a new casualty always arrives full-size.
+  const [minimizedId, setMinimizedId] = useState<string | null>(null)
 
   const casualty = useMemo(
     () =>
@@ -44,9 +50,42 @@ export function CasualtyAlertPopup() {
     [detections, dismissed],
   )
   // Stable, so the card's fade-out timer is not restarted by every data refresh.
-  const dismiss = useCallback((id: string) => setDismissed((prev) => new Set(prev).add(id)), [])
+  const dismiss = useCallback(
+    (id: string) =>
+      setDismissed((prev) => {
+        const next = new Set(prev).add(id)
+        saveDismissed(next)
+        return next
+      }),
+    [],
+  )
 
   if (!casualty || pathname === ROUTES.commandStaffDetections) return null
+
+  if (minimizedId === casualty.id) {
+    return (
+      <div className="fixed bottom-4 right-4 z-50 flex items-center overflow-hidden rounded-full border-2 border-danger bg-surface shadow-modal motion-safe:animate-alert-in sm:bottom-6 sm:right-6">
+        <button
+          type="button"
+          onClick={() => setMinimizedId(null)}
+          className="flex items-center gap-1.5 py-1.5 pl-3 pr-2 text-sm font-semibold text-danger hover:bg-danger-bg"
+          aria-label="Show the possible casualty"
+        >
+          <AlertTriangle className="size-4" />
+          Possible casualty · {Math.round(casualty.confidence * 100)}%
+          <ChevronUp className="size-4" />
+        </button>
+        <button
+          type="button"
+          onClick={() => dismiss(casualty.id)}
+          aria-label="Dismiss"
+          className="border-l border-border px-2 py-1.5 text-foreground-muted hover:bg-surface-secondary hover:text-foreground"
+        >
+          <X className="size-4" />
+        </button>
+      </div>
+    )
+  }
 
   return (
     // Keyed by casualty so a new one starts with a fresh entrance and countdown.
@@ -55,6 +94,7 @@ export function CasualtyAlertPopup() {
       casualty={casualty}
       verifying={verifying}
       onDismiss={dismiss}
+      onMinimize={() => setMinimizedId(casualty.id)}
       onVerify={handleVerify}
       onOpen={() => navigate(ROUTES.commandStaffDetections, { state: { selectDetectionId: casualty.id } })}
     />
@@ -85,6 +125,7 @@ interface AlertCardProps {
   casualty: Detection
   verifying: boolean
   onDismiss: (id: string) => void
+  onMinimize: () => void
   onVerify: (id: string) => void
   onOpen: () => void
 }
@@ -96,7 +137,7 @@ interface AlertCardProps {
  * never vanishes under the operator's pointer or mid-action. Closing it with ×
  * fades it out too, just faster.
  */
-function AlertCard({ casualty, verifying, onDismiss, onVerify, onOpen }: AlertCardProps) {
+function AlertCard({ casualty, verifying, onDismiss, onMinimize, onVerify, onOpen }: AlertCardProps) {
   const [hovered, setHovered] = useState(false)
   const [focused, setFocused] = useState(false)
   const [leaving, setLeaving] = useState<'timeout' | 'closed' | null>(null)
@@ -132,14 +173,26 @@ function AlertCard({ casualty, verifying, onDismiss, onVerify, onOpen }: AlertCa
           <AlertTriangle className="size-4" />
           Possible casualty · {Math.round(casualty.confidence * 100)}%
         </p>
-        <button
-          type="button"
-          onClick={() => setLeaving('closed')}
-          aria-label="Dismiss"
-          className="rounded-sm p-1 text-foreground-muted hover:bg-surface-secondary hover:text-foreground"
-        >
-          <X className="size-4" />
-        </button>
+        <div className="flex items-center gap-0.5">
+          <button
+            type="button"
+            onClick={onMinimize}
+            aria-label="Minimise"
+            title="Minimise: shrink to a small pill so you can use the buttons behind it"
+            className="rounded-sm p-1 text-foreground-muted hover:bg-surface-secondary hover:text-foreground"
+          >
+            <Minus className="size-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setLeaving('closed')}
+            aria-label="Dismiss"
+            title="Dismiss: it stays in Detection Review"
+            className="rounded-sm p-1 text-foreground-muted hover:bg-surface-secondary hover:text-foreground"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
       </div>
       <PossibleCasualtyCard detection={casualty} onVerify={onVerify} verifying={verifying} />
       <div className="mt-2 flex justify-end">
@@ -163,4 +216,24 @@ function AlertCard({ casualty, verifying, onDismiss, onVerify, onOpen }: AlertCa
       ) : null}
     </div>
   )
+}
+
+const DISMISSED_KEY = 'rescueeye.casualtyPopup.dismissed'
+
+/** Casualties already dismissed on this device, so a reload does not pop them up again. */
+function readDismissed(): ReadonlySet<string> {
+  try {
+    return new Set(JSON.parse(window.localStorage.getItem(DISMISSED_KEY) ?? '[]') as string[])
+  } catch {
+    return new Set()
+  }
+}
+
+function saveDismissed(ids: ReadonlySet<string>) {
+  try {
+    // The newest few hundred are plenty; old ids are long out of the queue.
+    window.localStorage.setItem(DISMISSED_KEY, JSON.stringify([...ids].slice(-300)))
+  } catch {
+    // Storage blocked: dismissals just last until the page reloads.
+  }
 }
