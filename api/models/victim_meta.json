@@ -1,22 +1,32 @@
 {
-  "map50": 0.6207,
-  "map50_95": 0.284,
-  "precision": 0.7035,
-  "recall": 0.5439,
+  "map50": 0.6388,
+  "map50_95": 0.2934,
+  "precision": 0.7342,
+  "recall": 0.5528,
   "base": "victim_best.pt",
-  "dataset": "VisDrone (pedestrian+people) + HERIDAL + SeaDronesSee swimmers, tiled to 1280",
+  "dataset": "VisDrone (pedestrian+people) + HERIDAL + SeaDronesSee swimmers + Okutama-Action lying/upright people, 1280",
   "imgsz": 1280,
-  "trained_at": "2026-11-02T17:04:16Z",
+  "trained_at": "2026-11-11T12:11:45Z",
   "model": "yolo11s",
-  "epochs": 10,
-  "uav_sar_test": {
-    "ap_iou03": 0.624,
-    "recall_at_0.25": 0.581,
-    "precision_at_0.25": 0.805
+  "epochs": 8,
+  "installed_at": "2026-11-16",
+  "okutama_lying_test": {
+    "lying_recall_at_0.25": 0.798,
+    "upright_recall_at_0.25": 0.879,
+    "precision_at_0.25": 0.918
   },
-  "previous_uav_sar_test": {
-    "ap_iou03": 0.463,
-    "recall_at_0.4": 0.51,
-    "precision_at_0.4": 0.469
+  "uav_sar_test": {
+    "ap_iou03": 0.716,
+    "recall_at_0.25": 0.62,
+    "precision_at_0.25": 0.783
+  },
+  "previous": {
+    "okutama_lying_recall": 0.173,
+    "okutama_upright_recall": 0.714,
+    "okutama_precision": 0.929,
+    "uav_sar_ap_iou03": 0.624,
+    "uav_sar_recall": 0.581,
+    "uav_sar_precision": 0.805,
+    "backup": "models/backup_victim_2026-11-16/"
   }
 }
