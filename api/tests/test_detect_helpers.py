@@ -87,6 +87,23 @@ def test_a_weak_body_box_over_rubble_does_not_swallow_a_sure_hand():
     assert detect._partly_buried([hand], [rubble]) == [hand]
 
 
+def test_a_faint_body_box_around_a_buried_head_does_not_count_twice():
+    faint = {"bbox": {"x": 2253, "y": 1218, "w": 111, "h": 96}, "confidence": 0.35}
+    head = {"bbox": {"x": 2253, "y": 1224, "w": 69, "h": 66}, "confidence": 0.79, "partial": True}
+    other = {"bbox": {"x": 100, "y": 100, "w": 40, "h": 90}, "confidence": 0.3}
+    parts = detect._partly_buried([head], [faint, other])
+    assert parts == [head]
+    assert detect._bodies_without_buried([faint, other], parts) == [other]
+
+
+def test_a_sure_body_keeps_its_box_and_its_own_hand_is_dropped():
+    body = {"bbox": {"x": 100, "y": 100, "w": 80, "h": 200}, "confidence": 0.8}
+    hand = {"bbox": {"x": 160, "y": 180, "w": 25, "h": 25}, "confidence": 0.6, "partial": True}
+    parts = detect._partly_buried([hand], [body])
+    assert parts == []
+    assert detect._bodies_without_buried([body], parts) == [body]
+
+
 def test_buried_detection_is_off_without_the_model(monkeypatch):
     monkeypatch.setattr(detect, "get_buried_ort_session", lambda: None)
     assert detect._run_buried(np.zeros((720, 1280, 3), dtype=np.uint8)) == []

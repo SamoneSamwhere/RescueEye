@@ -690,6 +690,18 @@ def _partly_buried(parts: list[dict], bodies: list[dict]) -> list[dict]:
                        and b["confidence"] >= p["confidence"] for b in bodies)]
 
 
+def _bodies_without_buried(bodies: list[dict], parts: list[dict]) -> list[dict]:
+    """
+    The body boxes left once a surer part box claims the person. A faint body
+    box drawn around a buried person's head or legs is the same person as the
+    part box inside it; keeping both made two tracks, so two casualties, at
+    one spot. Pass only the parts `_partly_buried` kept.
+    """
+    return [b for b in bodies
+            if not any(_inside(p["bbox"], b["bbox"]) >= BURIED_INSIDE_BODY
+                       and p["confidence"] > b["confidence"] for p in parts)]
+
+
 def _run_coco_assist(frame: np.ndarray) -> list[dict]:
     """
     Whole-body casualties via the generic COCO detector (class 0 = person).
@@ -1105,7 +1117,7 @@ def _analyse(jpeg: bytes, stream: StreamState, want_annotation: bool,
     with stream.lock:
         detections, inference_ms, poses = _run_victim(frame)
         buried = _partly_buried(_run_buried(frame), detections)
-        detections = detections + buried
+        detections = _bodies_without_buried(detections, buried) + buried
 
         # ── SORT tracking — assign persistent IDs via Kalman filter ─────────
         fh, fw = frame.shape[:2]

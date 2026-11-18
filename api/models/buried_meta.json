@@ -1,13 +1,13 @@
 {
-  "map50": 0.6499,
-  "map50_95": 0.3905,
-  "precision": 0.6634,
-  "recall": 0.6327,
-  "base": "buried_v1.pt",
-  "dataset": "COCO 2017 body parts composited onto AIDER collapse/fire/flood scenes, with unlabelled COCO object decoys, VisDrone/D-Fire negatives and SeaDronesSee swimmers",
+  "map50": 0.6572,
+  "map50_95": 0.494,
+  "precision": 0.6543,
+  "recall": 0.6104,
+  "base": "buried.pt",
+  "dataset": "COCO 2017 body parts composited onto AIDER collapse/fire/flood scenes, with unlabelled COCO object decoys, VisDrone/D-Fire negatives and SeaDronesSee swimmers; plus real staged hidden people (17 Nov 2026 shoot)",
   "classes": [
     "buried_person"
   ],
   "imgsz": 640,
-  "trained_at": "2026-11-04T14:15:29Z"
+  "trained_at": "2026-11-18T06:58:24Z"
 }
