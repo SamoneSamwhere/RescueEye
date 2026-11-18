@@ -110,7 +110,7 @@ export const mockUsers: MockUser[] = [
     createdAt: '2026-01-15T09:00:00Z',
     createdByUserId: 'usr-agency-admin-1',
     lastLoginAt: '2026-08-20T14:05:00Z',
-    currentLocation: { lat: 10.3245, lng: 123.905846 },
+    currentLocation: { lat: 10.323, lng: 123.9028 },
   },
   {
     id: 'usr-field-responder-5',
@@ -124,7 +124,7 @@ export const mockUsers: MockUser[] = [
     createdAt: '2026-02-20T09:00:00Z',
     createdByUserId: 'usr-agency-admin-1',
     lastLoginAt: '2026-08-20T12:55:00Z',
-    currentLocation: { lat: 10.2995, lng: 123.884154 },
+    currentLocation: { lat: 10.3088, lng: 123.8885 },
   },
   {
     id: 'usr-field-responder-6',
@@ -138,7 +138,7 @@ export const mockUsers: MockUser[] = [
     createdAt: '2025-12-15T09:00:00Z',
     createdByUserId: 'usr-agency-admin-1',
     lastLoginAt: '2026-06-01T10:00:00Z',
-    currentLocation: { lat: 10.3055, lng: 123.877727 },
+    currentLocation: { lat: 10.3112, lng: 123.8892 },
   },
   // Active with no missions — extra available responders so the dispatch list has several rows to pick from.
   {
@@ -153,7 +153,7 @@ export const mockUsers: MockUser[] = [
     createdAt: '2026-03-04T09:00:00Z',
     createdByUserId: 'usr-agency-admin-1',
     lastLoginAt: '2026-08-20T13:10:00Z',
-    currentLocation: { lat: 10.3185, lng: 123.8962 },
+    currentLocation: { lat: 10.32, lng: 123.8995 },
   },
   {
     id: 'usr-field-responder-8',

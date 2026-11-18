@@ -70,6 +70,8 @@ async def report_positions(
             # positions that did parse are still useful this frame.
             logger.debug(f"[responders] skipped malformed entry: {entry!r}")
 
+    from routers.teams import refresh_auto
+    await refresh_auto(user.agency_id)
     return {"accepted": accepted, "active": len(responder_registry.active())}
 
 
@@ -112,6 +114,8 @@ async def record_device_fix(responder_id: str, payload: dict, user: auth.Princip
         drone_locations.stop_piloting(responder_id)
     body = position_payload(position)
     await live_hub.broadcast({"type": "responder_location", "responder": body}, user.agency_id)
+    from routers.teams import refresh_auto
+    await refresh_auto(user.agency_id)
     return body
 
 

@@ -19,7 +19,7 @@ import { sourceLabelFor } from '../lib/sourceLabel'
 import { responseTeamFor } from '../lib/responseTeams'
 import { suggestPriority } from '../lib/priority'
 import { useCasualtyAssessment, TEAM_SIZE_LABEL } from '../features/assessment/useCasualtyAssessment'
-import { membersOfOtherTeams, useAddBackup, useMyTeam, useTeams } from '../features/teams/useTeams'
+import { membersOfOtherTeams, nearestTeam, useAddBackup, useTeams } from '../features/teams/useTeams'
 import type { DetectionValidationStatus } from '../types/detection'
 import { PageHelpButton } from '../components/help/PageHelpButton'
 
@@ -98,9 +98,13 @@ export function CommandStaffDetectionReviewPage() {
   const responderCandidates = useResponderCandidates(selectedDetection, session?.agencyId, incidents, missions)
   const [dialog, setDialog] = useState<'verify' | 'dispatch' | 'reject' | null>(null)
   const toast = useToast()
-  // The commander's standing team: verifying sends the casualty to it.
-  const myTeam = useMyTeam().data ?? null
+  // The nearest team with someone available: verifying sends the casualty to it.
+  // Teams form on their own from where responders are, so there is nothing to set up.
   const allTeams = useTeams().data
+  const myTeam = useMemo(
+    () => nearestTeam(allTeams, responderCandidates, session?.id),
+    [allTeams, responderCandidates, session?.id],
+  )
   const addBackup = useAddBackup()
   const suggestedCount = assessment.data ? (assessment.data.responders === '4+' ? 4 : Number(assessment.data.responders)) : undefined
 

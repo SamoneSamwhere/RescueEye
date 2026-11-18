@@ -8,6 +8,7 @@ import { INCIDENT_PRIORITY_LABEL } from '../../lib/labels'
 import { ResponderSelectionPanel } from '../responders'
 import type { ResponderCandidate } from '../responders'
 import type { IncidentPriority } from '../../types/incident'
+import { TEAM_RADIUS_M } from '../../features/teams/useTeams'
 
 const PRIORITY_OPTIONS: IncidentPriority[] = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']
 
@@ -33,7 +34,7 @@ export interface VerifyDispatchSubmit {
   backupIds: string[]
 }
 
-/** The commander's standing team, as the window needs it. */
+/** The team nearest the casualty, as the window needs it. */
 export interface VerifyTeam {
   id: string
   name: string
@@ -55,9 +56,9 @@ interface VerifyDispatchModalProps {
   suggestedTeam?: string
   /** Suggested team size as a number (4 for "4 or more"), from the same assessment. */
   suggestedCount?: number
-  /** The commander's own team. Its available members are alerted without picking anyone. */
+  /** The nearest team with someone available. Its available members are alerted without picking anyone. */
   myTeam?: VerifyTeam | null
-  /** Responders on other commanders' teams: never offered as backup. */
+  /** Responders on other teams: never offered as backup. */
   otherTeamMemberIds?: Set<string>
   candidates: ResponderCandidate[]
   /** True once the incident already has a response team — new picks join it. */
@@ -205,11 +206,11 @@ export function VerifyDispatchModal({
             <TeamSummary team={myTeam} candidates={candidates} selectedIds={selectedIds} suggestedTeam={suggestedTeam} />
           ) : (
             <div className="rounded-md border border-warning-border bg-warning-bg px-3 py-2 text-sm text-warning-fg">
-              You have no team yet, so choose responders below.{' '}
+              No team is available near this casualty, so choose responders below. Teams form on their own when
+              3–4 available responders are within {TEAM_RADIUS_M} m of each other.{' '}
               <Link to={ROUTES.commandStaffTeam} className="font-semibold underline">
-                Form your team
-              </Link>{' '}
-              and verified casualties will go to it automatically.
+                See teams
+              </Link>
               {suggestedTeam ? (
                 <>
                   {' '}
@@ -258,7 +259,7 @@ function TeamSummary({
     <section className="overflow-hidden rounded-md border border-accent-border bg-surface">
       <header className="flex items-center gap-2 border-b border-accent-border bg-accent-subtle px-4 py-2.5 text-sm font-semibold text-accent">
         <UsersRound className="size-4" />
-        Team {team.name} will be alerted
+        Team {team.name} will be alerted · nearest team
       </header>
       <div className="flex flex-col gap-2 px-4 py-3 text-sm">
         <ul className="flex flex-col gap-1">
@@ -284,7 +285,7 @@ function TeamSummary({
         <p className="text-xs text-foreground-secondary">
           {alerted} {alerted === 1 ? 'responder' : 'responders'} will be alerted
           {suggestedTeam ? <> · suggested for this casualty: <strong className="text-foreground">{suggestedTeam}</strong></> : null}
-          {backup.length ? ' · backup joins your team' : ''}
+          {backup.length ? ` · backup joins Team ${team.name}` : ''}
         </p>
       </div>
     </section>

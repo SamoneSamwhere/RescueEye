@@ -3,7 +3,7 @@ import { Card } from '../ui'
 import { useAuth } from '../../features/auth'
 import { useMyTeam } from '../../features/teams/useTeams'
 
-/** Which team this responder is on, who leads it and who they go out with. Hidden when on no team. */
+/** Which team this responder is on and who they go out with. Hidden when on no team. */
 export function MyTeamCard() {
   const { session } = useAuth()
   const team = useMyTeam(session?.role === 'FIELD_RESPONDER').data
@@ -16,7 +16,9 @@ export function MyTeamCard() {
       </span>
       <div className="min-w-0 text-sm">
         <p className="font-semibold text-foreground">You're on Team {team.name}</p>
-        <p className="text-foreground-secondary">Led by {team.commanderName || 'your Command Staff'}</p>
+        <p className="text-foreground-secondary">
+          {team.auto ? 'Formed with the responders near you' : `Led by ${team.commanderName || 'your Command Staff'}`}
+        </p>
         {others.length ? <p className="text-foreground-muted">With {others.join(', ')}</p> : null}
       </div>
     </Card>

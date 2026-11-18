@@ -1,5 +1,9 @@
 """
-/teams - standing response teams, one per Command Staff member (services/team_store.py).
+/teams - standing response teams (services/team_store.py).
+
+Teams form on their own from where responders are (refresh_auto), every time
+positions come in and every time the teams are read. A commander can still
+form one by hand.
 
   GET    /teams                         the agency's active teams
   GET    /teams/mine                    a responder's team, or a commander's own
@@ -16,10 +20,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Body, Depends, HTTPException
 
 from routers.deps import current_user, require_roles
-from services import auth, live_hub, team_store
+from services import auth, live_hub, mission_store, responder_registry, team_store
 
 router = APIRouter()
 COMMANDER = require_roles("COMMAND_STAFF")
+ACTIVE_MISSION = {"PENDING", "ACCEPTED", "EN_ROUTE", "ON_SITE"}
 
 
 def _agency(user: auth.Principal) -> str:
@@ -33,14 +38,28 @@ async def _changed(team: dict) -> dict:
     return team
 
 
+async def refresh_auto(agency_id: str | None) -> None:
+    """Re-groups the agency's responders by position and pushes any team that changed."""
+    if not agency_id:
+        return
+    await mission_store.load_agency(agency_id)
+    busy = {str(m.get("responderUserId")) for m in mission_store.all_missions(agency_id)
+            if m.get("status") in ACTIVE_MISSION}
+    positions = {p.responder_id: (p.lat, p.lng, p.name) for p in responder_registry.active(agency_id)}
+    for team in team_store.auto_group(agency_id, positions, busy):
+        await _changed(team)
+
+
 @router.get("")
 async def list_teams(user: auth.Principal = Depends(current_user)):
+    await refresh_auto(_agency(user))
     return {"teams": team_store.active_teams(_agency(user))}
 
 
 @router.get("/mine")
 async def my_team(user: auth.Principal = Depends(current_user)):
     agency = _agency(user)
+    await refresh_auto(agency)
     team = (team_store.team_of_commander(agency, user.user_id) if user.role == "COMMAND_STAFF"
             else team_store.team_of_member(agency, user.user_id))
     return {"team": team}

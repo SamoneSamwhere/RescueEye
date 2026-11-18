@@ -10,7 +10,7 @@ import { RESPONSE_TEAM_STATUS_LABEL } from '../lib/responseTeams'
 import type { ResponseTeamStatus } from '../lib/responseTeams'
 import { mockUsers } from '../data/mockUsers'
 import { PageHelpButton } from '../components/help/PageHelpButton'
-import { useTeams } from '../features/teams/useTeams'
+import { TEAM_RADIUS_M, useTeams } from '../features/teams/useTeams'
 
 type StatusFilter = ResponseTeamStatus | 'ALL'
 
@@ -55,7 +55,7 @@ export function AgencyAdminTeamsPage() {
     <>
       <PageHeader
         title="Response Teams"
-        description="The standing team each Command Staff member leads, and who went to each incident."
+        description="The teams responders form by being close together, and who went to each incident."
         actions={<PageHelpButton guideId="teams" />}
       />
 
@@ -64,9 +64,9 @@ export function AgencyAdminTeamsPage() {
           <div className="flex items-start gap-2 rounded-md border border-accent-border bg-accent-subtle px-3 py-2.5 text-sm">
             <Eye className="mt-0.5 size-4 shrink-0 text-accent" />
             <p className="text-foreground-secondary">
-              <span className="font-medium text-foreground">Teams are formed by Command Staff.</span> Each commander forms
-              one standing team (3 by default) from the nearest available Field Responders, and every casualty they
-              verify is sent to it. A responder is on only one team at a time. This page is for monitoring only.
+              <span className="font-medium text-foreground">Teams form on their own.</span> When 3–4 available Field
+              Responders are within {TEAM_RADIUS_M} m of each other they become a team, and a verified casualty is sent
+              to the nearest one. A responder is on only one team at a time. This page is for monitoring only.
             </p>
           </div>
         </Reveal>
@@ -74,14 +74,14 @@ export function AgencyAdminTeamsPage() {
         <Reveal delayMs={60}>
           <Panel title={`Standing teams (${standing.length})`}>
             {standing.length === 0 ? (
-              <p className="text-sm text-foreground-muted">No commander has formed a team yet.</p>
+              <p className="text-sm text-foreground-muted">No responders are close enough together to form a team yet.</p>
             ) : (
               <ul className="grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
                 {standing.map((t) => (
                   <li key={t.id} className="rounded-md border border-border px-3 py-2.5">
                     <p className="font-semibold text-foreground">Team {t.name}</p>
                     <p className="text-xs text-foreground-muted">
-                      Led by {t.commanderName || 'a commander'} · formed {formatDateTime(t.formedAt)}
+                      {t.auto ? 'Formed on its own' : `Led by ${t.commanderName || 'a commander'}`} · formed {formatDateTime(t.formedAt)}
                     </p>
                     <p className="mt-1 text-foreground-secondary">
                       {t.members.map((m) => m.name).join(', ') || 'No members'}

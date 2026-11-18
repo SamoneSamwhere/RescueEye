@@ -5,7 +5,7 @@ import { useToast } from '../toast'
 import { useResponderCandidatesNear } from '../../hooks/useResponderCandidates'
 import { incidentDetection } from '../../types/detection'
 import { distanceKm } from '../../lib/geo'
-import { membersOfOtherTeams, useMyTeam, useReplaceMember, useTeams } from './useTeams'
+import { membersOfOtherTeams, useReplaceMember, useTeams } from './useTeams'
 
 const HANDLED_KEY = 'rescueeye.teams.replacedDeclines'
 
@@ -26,17 +26,16 @@ function saveHandled(ids: Set<string>) {
 }
 
 /**
- * Renders nothing. When a member of this commander's team declines a mission,
- * sends the nearest available responder who is on no team in their place, and
- * swaps them onto the team - so a decline never leaves a casualty short.
+ * Renders nothing. When a team member declines a mission, sends the nearest
+ * available responder who is on no team in their place, and swaps them onto
+ * the team - so a decline never leaves a casualty short.
  *
- * Runs only on the team commander's own console, so two consoles never send
- * two replacements for the same decline.
+ * Runs only on the console of the commander who sent that mission, so two
+ * consoles never send two replacements for the same decline.
  */
 export function TeamAutoReplace() {
   const { session } = useAuth()
   const { missions, incidents, detections, dispatchResponders } = useCommandStaffData()
-  const myTeam = useMyTeam(session?.role === 'COMMAND_STAFF').data ?? null
   const teams = useTeams(session?.role === 'COMMAND_STAFF').data
   const replaceMember = useReplaceMember()
   const toast = useToast()
@@ -45,18 +44,23 @@ export function TeamAutoReplace() {
   const handled = useRef<Set<string>>(readHandled())
 
   useEffect(() => {
-    if (!myTeam || !session) return
+    if (!teams?.length || !session) return
     const declined = missions.filter(
-      (m) => m.status === 'DECLINED' && m.teamId === myTeam.id && !handled.current.has(m.id),
+      (m) =>
+        m.status === 'DECLINED' &&
+        m.dispatchedByUserId === session.id &&
+        teams.some((t) => t.id === m.teamId) &&
+        !handled.current.has(m.id),
     )
     if (!declined.length) return
 
-    const memberIds = new Set(myTeam.members.map((m) => m.id))
-    const others = membersOfOtherTeams(teams, myTeam.id)
     const used = new Set<string>()
 
     for (const mission of declined) {
       handled.current.add(mission.id)
+      const myTeam = teams.find((t) => t.id === mission.teamId)!
+      const memberIds = new Set(myTeam.members.map((m) => m.id))
+      const others = membersOfOtherTeams(teams, myTeam.id)
       const incident = incidents.find((i) => i.id === mission.incidentId)
       if (!incident || incident.status === 'CLOSED') continue
       const where = incidentDetection(detections, incident.detectionId)?.location
@@ -77,7 +81,7 @@ export function TeamAutoReplace() {
     }
     saveHandled(handled.current)
     // Re-run when missions change (a decline arrives) or the team/roster changes.
-  }, [missions, myTeam, teams, roster, incidents, detections, session, dispatchResponders, replaceMember, toast])
+  }, [missions, teams, roster, incidents, detections, session, dispatchResponders, replaceMember, toast])
 
   return null
 }

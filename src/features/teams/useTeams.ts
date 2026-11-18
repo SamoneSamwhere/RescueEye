@@ -3,14 +3,20 @@ import { api } from '../../lib/apiClient'
 import type { ResponderCandidate } from '../../components/responders'
 import type { GeoPoint } from '../../types/geo'
 
-/** A standing response team (api/services/team_store.py). */
+/**
+ * A standing response team (api/services/team_store.py). Teams form on their
+ * own when 3-4 available responders are close together (`auto`); a commander
+ * can still form one by hand, and then leads it.
+ */
 export interface Team {
   id: string
   agencyId: string
   /** Callsign: Alpha, Bravo, ... */
   name: string
-  commanderId: string
+  /** Null on a team that formed on its own. */
+  commanderId: string | null
   commanderName: string
+  auto?: boolean
   size: number
   members: Array<{ id: string; name: string }>
   centre: (GeoPoint & { label?: string }) | null
@@ -20,6 +26,8 @@ export interface Team {
 }
 
 export const DEFAULT_TEAM_SIZE = 3
+/** How close responders must be to form a team on their own (TEAM_RADIUS_M in the API). */
+export const TEAM_RADIUS_M = 500
 const TEAMS_KEY = ['teams']
 
 /** The agency's active teams. Refreshed live when any console changes one. */
@@ -52,6 +60,27 @@ export function pickTeam(
   onOtherTeams: Set<string>,
 ): ResponderCandidate[] {
   return candidates.filter((c) => c.isAvailable && !onOtherTeams.has(c.id)).slice(0, size)
+}
+
+/**
+ * The team to send to a casualty: of the teams this commander may send (every
+ * automatic team, plus their own hand-formed one), the one whose nearest
+ * available member is closest. `candidates` are ranked from the casualty, so
+ * the first available member found is that team's nearest. Teams with nobody
+ * available are skipped.
+ */
+export function nearestTeam(
+  teams: Team[] | undefined,
+  candidates: ResponderCandidate[],
+  commanderId: string | undefined,
+): Team | null {
+  const sendable = (teams ?? []).filter((t) => t.auto || t.commanderId === commanderId)
+  for (const c of candidates) {
+    if (!c.isAvailable) continue
+    const team = sendable.find((t) => t.members.some((m) => m.id === c.id))
+    if (team) return team
+  }
+  return null
 }
 
 /** Responder ids on any active team other than `exceptTeamId`. */
