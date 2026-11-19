@@ -53,6 +53,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--victim", help="ONNX victim model to evaluate instead of the installed one")
     ap.add_argument("--no-assist", action="store_true", help="victim model alone, without the pose/COCO assist")
+    ap.add_argument("--sweep", action="store_true", help="also print recall/precision at other cutoffs")
     args = ap.parse_args()
 
     from services import yolo_model
@@ -104,6 +105,11 @@ def main() -> None:
     name = Path(args.victim).name if args.victim else "installed"
     print(f"RESULT {name}{' (no assist)' if args.no_assist else ''}: {len(frames)} frames, {n_gt} people | "
           f"AP@IoU{IOU_MATCH} {ap_val:.3f} | at live conf {live_conf}: recall {r_live:.3f}, precision {p_live:.3f}")
+    if args.sweep:
+        for c in (0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50):
+            at = [p for p in preds if p[0] >= c]
+            print(f"  conf {c:.2f}: recall {sum(p[1] for p in at) / max(n_gt, 1):.3f}, "
+                  f"precision {sum(p[1] for p in at) / max(len(at), 1):.3f}")
 
 
 if __name__ == "__main__":

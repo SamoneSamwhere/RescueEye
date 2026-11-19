@@ -148,6 +148,19 @@ MOTION_MAX_BODY_PER_S  = float(os.getenv("MOTION_MAX_BODY_PER_S", "1.0"))
 # drifting this far over 15-30s is someone walking, crawling off or being carried.
 STILLNESS_VETO_BELOW   = float(os.getenv("STILLNESS_VETO_BELOW", "0.3"))
 
+# Hold: a tracked subject must keep being judged a casualty for this long
+# before it is reported as one. Measured on the team's staged footage of
+# 17 Nov 2026: a striped pole lying on the ground, and walkers crossing an
+# angled shot, were called casualties for one to three seconds each (posture
+# alone qualifies from the second sighting, long before the stillness window
+# fills), while the staged victims stayed casualties frame after frame. In
+# seconds rather than frames, so it holds at any /detect cadence. Any verdict
+# on the track that is not a casualty restarts it. 0 turns it off.
+# At 1 frame/s over those clips: 2 s left 0 false casualties (from 3 + 2 + 1
+# frames), trunk victim 17 -> 15 of 18 frames, sheet victim 18 -> 12 of 21;
+# 3 s removed no more false ones and cut the sheet victim to 9.
+CASUALTY_HOLD_S        = float(os.getenv("CASUALTY_HOLD_S", "2.0"))
+
 # Fusion weights, used when both signals are available.
 POSTURE_WEIGHT   = float(os.getenv("POSTURE_WEIGHT", "0.6"))
 STILLNESS_WEIGHT = float(os.getenv("STILLNESS_WEIGHT", "0.4"))
@@ -323,6 +336,7 @@ class _TrackHistory:
     points: list = field(default_factory=list)  # (t, x, y, body length px)
     last_seen: float = 0.0
     compensated: bool = True
+    casualty_since: float | None = None   # start of the current unbroken run of casualty verdicts
 
 
 class StillnessMonitor:
@@ -404,6 +418,22 @@ class StillnessMonitor:
         drift = float(np.max(np.hypot(xs - np.median(xs), ys - np.median(ys))))
         diag = math.hypot(float(frame_shape[1]), float(frame_shape[0])) or 1.0
         return 1.0 - _clamp01((drift / diag) / STILLNESS_MAX_DRIFT), "stillness_measured"
+
+    def hold(self, track_id: int, is_casualty: bool) -> float:
+        """
+        Records this frame's verdict for the track and returns how many seconds
+        it has been a casualty without a break (0 when it is not one now).
+        Call after `update` for the same frame.
+        """
+        now = time.monotonic()
+        with self._lock:
+            hist = self._tracks.setdefault(track_id, _TrackHistory(last_seen=now))
+            if not is_casualty:
+                hist.casualty_since = None
+                return 0.0
+            if hist.casualty_since is None:
+                hist.casualty_since = now
+            return now - hist.casualty_since
 
     def recent_drift(self, track_id: int, frame_shape) -> float | None:
         """
@@ -576,6 +606,17 @@ def judge(detection: dict, keypoints, frame_shape,
         confirmed = False
 
     verdict.is_casualty = qualifying and confirmed and verdict.score >= CASUALTY_MIN_SCORE
+    return _apply_hold(verdict, track_id, monitor or _monitor)
+
+
+def _apply_hold(verdict: CasualtyVerdict, track_id, mon: StillnessMonitor) -> CasualtyVerdict:
+    """Withholds a tracked casualty until it has lasted CASUALTY_HOLD_S (see there)."""
+    if track_id is None or CASUALTY_HOLD_S <= 0:
+        return verdict
+    held = mon.hold(int(track_id), verdict.is_casualty)
+    if verdict.is_casualty and held < CASUALTY_HOLD_S:
+        verdict.is_casualty = False
+        verdict.reasons.append("casualty_holding")
     return verdict
 
 
@@ -602,10 +643,11 @@ def _judge_partly_buried(detection: dict, frame_shape, mon: StillnessMonitor,
         drift = mon.recent_drift(int(track_id), frame_shape)
         if drift is None:
             verdict.reasons.append("awaiting_second_sighting")
-            return verdict
-        if drift > BURIED_MAX_DRIFT_PER_S:
+        elif drift > BURIED_MAX_DRIFT_PER_S:
             verdict.reasons.append("moving")
-            return verdict
+        else:
+            verdict.is_casualty = True
+        return _apply_hold(verdict, track_id, mon)
     verdict.is_casualty = True
     return verdict
 

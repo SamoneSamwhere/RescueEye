@@ -43,6 +43,17 @@ def _jpeg_b64(rgb: tuple[int, int, int], size=(640, 480)) -> str:
     return base64.b64encode(buf.getvalue()).decode()
 
 
+@pytest.fixture(autouse=True)
+def _no_casualty_hold(monkeypatch):
+    """
+    Most gate tests judge a body on two sightings a second or two apart and
+    test posture, stillness or motion, not the hold that makes a tracked
+    casualty wait CASUALTY_HOLD_S. tests/test_casualty_hold.py turns it back on.
+    """
+    from services import casualty
+    monkeypatch.setattr(casualty, "CASUALTY_HOLD_S", 0.0)
+
+
 @pytest.fixture()
 def bright_frame_b64() -> str:
     return _jpeg_b64((200, 200, 200))
