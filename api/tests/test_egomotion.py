@@ -86,3 +86,28 @@ def test_apply_shifts_by_translation():
     x, y = motion.apply(100.0, 100.0, 320.0, 240.0)
     assert x == pytest.approx(130.0)
     assert y == pytest.approx(90.0)
+
+
+def test_a_perspective_change_is_recovered_as_a_homography():
+    """
+    An angled drone camera moving for a second sees the ground in perspective,
+    not just shifted. The point mapping must follow it: the tracker matches a
+    person's box by where this says it moved.
+    """
+    import cv2
+    frame = _textured_frame(w=960, h=540)
+    H_true = np.array([[1.04, 0.02, -30.0], [0.0, 1.06, 12.0], [0.00002, 0.00006, 1.0]])
+    warped = cv2.warpPerspective(frame, H_true, (960, 540))
+    est = EgoMotionEstimator()
+    est.estimate(frame)
+    motion = est.estimate(warped)
+    assert motion.ok is True and motion.H is not None
+    for x, y in [(200.0, 150.0), (760.0, 400.0)]:
+        p = H_true @ np.array([x, y, 1.0])
+        assert motion.apply(x, y, 480.0, 270.0) == pytest.approx((p[0] / p[2], p[1] / p[2]), abs=3)
+
+
+def test_apply_uses_the_homography_when_there_is_one():
+    H = np.array([[1.0, 0.0, 5.0], [0.0, 1.0, -7.0], [0.0, 0.0, 1.0]])
+    motion = CameraMotion(dx=999.0, ok=True, H=H)
+    assert motion.apply(10.0, 20.0, 0.0, 0.0) == pytest.approx((15.0, 13.0))

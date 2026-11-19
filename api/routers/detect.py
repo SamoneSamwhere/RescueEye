@@ -1120,7 +1120,12 @@ def _analyse(jpeg: bytes, stream: StreamState, want_annotation: bool,
         detections = _bodies_without_buried(detections, buried) + buried
 
         # ── SORT tracking — assign persistent IDs via Kalman filter ─────────
+        # Camera motion first: the tracker shifts its tracks by it before
+        # matching, so a still person keeps one ID while the drone flies.
+        # The people are masked out of the estimate.
         fh, fw = frame.shape[:2]
+        camera_motion = stream.egomotion.estimate(frame, exclude=detections)
+        stream.tracker.advance_camera(camera_motion, frame.shape)
         if detections:
             det_arr = np.array([
                 [d["bbox"]["x"], d["bbox"]["y"],
@@ -1198,7 +1203,6 @@ def _analyse(jpeg: bytes, stream: StreamState, want_annotation: bool,
         # Runs after the position stamp, because the responder veto is a
         # question about where the detection is, and after tracking, because
         # stillness is a property of a track rather than of a box.
-        camera_motion = stream.egomotion.estimate(frame, exclude=annotated)
         stream.stillness.advance_camera(camera_motion, frame.shape)
         # Camera pitch (read above with the position) decides how posture is
         # measured at all — straight down, the angle of a torso means the

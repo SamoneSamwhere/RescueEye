@@ -97,6 +97,42 @@ class Sort:
         self._tracks.clear()
         self._frame = 0
 
+    def advance_camera(self, motion, frame_shape) -> None:
+        """
+        Moves every track into the new frame's coordinates before matching.
+
+        Call once per frame, before `update`, with the camera motion from the
+        previous frame to this one (services/egomotion.CameraMotion). From a
+        moving drone a person lying still slides across the image at the
+        drone's speed; at one detection frame a second that is often further
+        than the box is wide, so without this the IoU match failed and the
+        same person got a new ID every frame or two - which restarted the
+        stillness window each time. A failed estimate (`ok` False) leaves the
+        tracks as they are.
+        """
+        if not getattr(motion, "ok", False) or not self._tracks:
+            return
+        cx0, cy0 = frame_shape[1] / 2.0, frame_shape[0] / 2.0
+
+        def move(px: float, py: float) -> tuple[float, float]:
+            return motion.apply(px, py, cx0, cy0)
+
+        for t in self._tracks:
+            x = t.kf.x
+            x1, y1, x2, y2 = _to_bbox(x)
+            corners = [move(x1, y1), move(x2, y1), move(x2, y2), move(x1, y2)]
+            xs, ys = [c[0] for c in corners], [c[1] for c in corners]
+            nx1, ny1, nx2, ny2 = min(xs), min(ys), max(xs), max(ys)
+            if nx2 - nx1 < 1 or ny2 - ny1 < 1:
+                continue
+            old_area = max(float(x[2, 0]), 1e-6)
+            cx, cy = float(x[0, 0]), float(x[1, 0])
+            # Image velocity turns and stretches with the view: carry its tip too.
+            tip, centre = move(cx + float(x[4, 0]), cy + float(x[5, 0])), move(cx, cy)
+            x[:4] = _to_z(np.array([nx1, ny1, nx2, ny2]))
+            x[4, 0], x[5, 0] = tip[0] - centre[0], tip[1] - centre[1]
+            x[6, 0] *= float(x[2, 0]) / old_area
+
     def update(self, dets: np.ndarray) -> np.ndarray:
         """
         dets   : float32 array [N, 5] — [x1, y1, x2, y2, score]

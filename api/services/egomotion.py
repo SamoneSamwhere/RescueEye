@@ -8,10 +8,15 @@ looks like it is moving at exactly the speed of the drone. Without this
 compensation the stillness test in `services/casualty.py` reports nothing as
 still while the drone is flying, and everything as still while it hovers.
 
-The estimate is a partial affine (translation, rotation, uniform scale) fitted
-to ORB features. Full homography was not used deliberately: it needs more
-correspondences to stay stable, and over the short baseline between two
-consecutive detection frames the extra perspective terms mostly fit noise.
+The estimate is a homography fitted to ORB features: the ground is close to a
+plane, and a homography is exactly how a plane moves between two views. It
+replaced a partial affine (translation, rotation, uniform scale) on
+2026-11-19. Detection frames arrive about a second apart, and over that gap
+an angled drone camera sees real perspective change. On the team's staged
+footage the affine estimate put a still person up to four box-widths from
+where they really were, so the tracker lost them and the stillness test
+restarted. The homography stayed under a tenth of a box width. When the
+homography fit looks degenerate, the partial affine is still used.
 
 People are masked out before features are detected — otherwise a body filling
 much of the frame contributes its own corners to the estimate, and the motion
@@ -36,8 +41,10 @@ except Exception:  # pragma: no cover - cv2 is a hard dep in practice
 # ~25ms, at 480px wide it is ~4ms, and the resulting transform is scaled back
 # up. Camera motion is a global, low-frequency signal — it does not need the
 # full resolution to be measured.
-EGOMOTION_WIDTH   = int(os.getenv("EGOMOTION_WIDTH", "480"))
-EGOMOTION_FEATURES = int(os.getenv("EGOMOTION_FEATURES", "400"))
+EGOMOTION_WIDTH   = int(os.getenv("EGOMOTION_WIDTH", "640"))
+EGOMOTION_FEATURES = int(os.getenv("EGOMOTION_FEATURES", "800"))
+# "homography" (default) or "affine" (the pre-2026-11-19 partial affine).
+EGOMOTION_MODEL = os.getenv("EGOMOTION_MODEL", "homography").strip().lower()
 # Below this many matched features the fit is not trustworthy; the caller is
 # told the estimate failed rather than handed a confident-looking wrong answer.
 EGOMOTION_MIN_MATCHES = int(os.getenv("EGOMOTION_MIN_MATCHES", "12"))
@@ -51,15 +58,25 @@ class CameraMotion:
     scale: float = 1.0
     rotation_deg: float = 0.0
     ok: bool = False
+    # Full-resolution 3x3 homography when one was fitted. dx/dy/scale/rotation
+    # are then a summary of it at the frame centre, for logs and callers that
+    # only want a rough figure.
+    H: np.ndarray | None = None
 
     def apply(self, x: float, y: float, cx: float, cy: float) -> tuple[float, float]:
         """
         Maps a previous-frame point into current-frame coordinates.
 
-        Rotation and scale are taken about the frame centre (cx, cy), which is
-        where a drone's yaw and altitude changes actually pivot the image.
+        With a homography the point is mapped through it. Otherwise rotation
+        and scale are taken about the frame centre (cx, cy), which is where a
+        drone's yaw and altitude changes actually pivot the image.
         """
         if not self.ok:
+            return x, y
+        if self.H is not None:
+            p = self.H @ np.array([x, y, 1.0])
+            if abs(p[2]) > 1e-9:
+                return float(p[0] / p[2]), float(p[1] / p[2])
             return x, y
         theta = np.radians(self.rotation_deg)
         cos_t, sin_t = np.cos(theta) * self.scale, np.sin(theta) * self.scale
@@ -136,6 +153,10 @@ class EgoMotionEstimator:
 
             src = np.float32([kp1[m.queryIdx].pt for m in matches]).reshape(-1, 1, 2)
             dst = np.float32([kp2[m.trainIdx].pt for m in matches]).reshape(-1, 1, 2)
+            if EGOMOTION_MODEL != "affine":
+                motion = _homography_motion(src, dst, scale, gray.shape)
+                if motion is not None:
+                    return motion
             matrix, inliers = cv2.estimateAffinePartial2D(
                 src, dst, method=cv2.RANSAC, ransacReprojThreshold=3.0,
             )
@@ -153,3 +174,35 @@ class EgoMotionEstimator:
         except Exception as exc:
             logger.debug(f"[egomotion] estimate failed (non-fatal): {exc}")
             return CameraMotion()
+
+
+def _homography_motion(src: np.ndarray, dst: np.ndarray, scale: float,
+                       small_shape: tuple) -> CameraMotion | None:
+    """
+    Homography from matched points on the downscaled copy, returned in
+    full-resolution pixels; None when the fit is missing or implausible, so
+    the caller falls back to the partial affine.
+    """
+    if len(src) < max(EGOMOTION_MIN_MATCHES, 8):
+        return None
+    H_small, inliers = cv2.findHomography(src, dst, cv2.RANSAC, 3.0)
+    if H_small is None or inliers is None or int(inliers.sum()) < EGOMOTION_MIN_MATCHES:
+        return None
+    # Rescale: full = S^-1 . H_small . S, with S the downscale.
+    S = np.diag([scale, scale, 1.0])
+    H = np.linalg.inv(S) @ H_small @ S
+    H = H / H[2, 2]
+    # Between two frames a second apart the view changes size by a few tens
+    # of percent at most and barely tilts. A fit outside that is RANSAC
+    # locking onto something other than the ground (a flat roof edge, one
+    # tree), not the camera.
+    det = float(np.linalg.det(H[:2, :2]))
+    h, w = small_shape[0] / scale, small_shape[1] / scale
+    if not (0.4 < det < 2.5) or abs(H[2, 0]) * w > 0.5 or abs(H[2, 1]) * h > 0.5:
+        return None
+    cx, cy = w / 2.0, h / 2.0
+    c = H @ np.array([cx, cy, 1.0])
+    return CameraMotion(dx=float(c[0] / c[2] - cx), dy=float(c[1] / c[2] - cy),
+                        scale=float(np.sqrt(abs(det))),
+                        rotation_deg=float(np.degrees(np.arctan2(H[1, 0], H[0, 0]))),
+                        ok=True, H=H)
